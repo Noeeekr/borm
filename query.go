@@ -1,11 +1,8 @@
-package query
+package borm
 
 import (
 	"fmt"
 	"strings"
-
-	"github.com/Noeeekr/borm/common"
-	"github.com/Noeeekr/borm/table"
 )
 
 type Type int
@@ -21,20 +18,27 @@ type Query struct {
 	typ                 Type
 	requiredValueLength int
 	values              []any
-	hasWhere            bool
+
+	hasWhere bool
+	hasSet   bool
 
 	Query       string
-	Information *table.TableInformation
-	Error       *common.Error
+	Information *Table
+	Error       *Error
 }
 
-func (q *Query) SetError(e *common.Error) *Query {
+func (q *Query) SetError(e *Error) *Query {
 	q.Error = e
 	return q
 }
 
+func Update(table any) *Query {
+	q := newQueryOnTable(table)
+	q.typ = UPDATE
+	return q
+}
 func Select(table any, fieldsName ...string) *Query {
-	q := newWithTableInformation(table)
+	q := newQueryOnTable(table)
 	if q.Error != nil {
 		return q
 	}
@@ -49,7 +53,7 @@ func Select(table any, fieldsName ...string) *Query {
 }
 
 func Insert(table any, fieldsName ...string) *Query {
-	q := newWithTableInformation(table)
+	q := newQueryOnTable(table)
 	if q.Error != nil {
 		return q
 	}
@@ -64,20 +68,23 @@ func Insert(table any, fieldsName ...string) *Query {
 	return q
 }
 func (q *Query) Values(values ...any) *Query {
+	if q.Error != nil {
+		return q
+	}
 	if q.typ == SELECT || q.typ == DELETE {
-		q.Error = common.NewError().Status(common.ErrInvalidMethodChain).Description("Must be INSERT or UPDATE")
+		q.Error = NewError().Status(ErrInvalidMethodChain).Description("Must be INSERT or UPDATE")
 		return q
 	}
 	var valueAmount = len(values)
 	if valueAmount == 0 {
-		q.Error = common.NewError().Description("Cannot use empty values").Status(common.ErrEmpty)
+		q.Error = NewError().Description("Cannot use empty values").Status(ErrEmpty)
 		return q
 	}
 	if valueAmount%q.requiredValueLength != 0 {
-		q.Error = common.NewError().
+		q.Error = NewError().
 			Description("Invalid value amount").
 			Append(fmt.Sprintf("Wanted: multiple of %d. Recieved: %d", q.requiredValueLength, valueAmount)).
-			Status(common.ErrSyntax)
+			Status(ErrSyntax)
 		return q
 	}
 
@@ -97,6 +104,28 @@ func (q *Query) Values(values ...any) *Query {
 	q.Query += fmt.Sprintf("VALUES %s ", strings.Join(fields, ","))
 	return q
 }
+func (q *Query) Set(field string, value any) *Query {
+	if q.typ != UPDATE {
+		q.Error = NewError().Status(ErrInvalidMethodChain).Description("Must be INSERT or UPDATE")
+		return q
+	}
+
+	if q.hasSet {
+		q.Query += "SET "
+		q.hasSet = true
+	} else {
+		q.Query += ", "
+	}
+
+	switch value.(type) {
+	case string:
+		q.Query += fmt.Sprintf("%s = '%s'", field, value)
+	default:
+		q.Query += fmt.Sprintf("%s = %d", field, value)
+	}
+
+	return q
+}
 
 type WhereCondition struct {
 	Field string
@@ -104,8 +133,11 @@ type WhereCondition struct {
 }
 
 func (q *Query) Where(fieldName string, fieldValue any) *Query {
+	if q.Error != nil {
+		return q
+	}
 	if q.typ == INSERT {
-		q.Error = common.NewError().Status(common.ErrInvalidMethodChain).Description("Must be INSERT | UPDATE | DELETE")
+		q.Error = NewError().Status(ErrInvalidMethodChain).Description("Must be INSERT | UPDATE | DELETE")
 		return q
 	}
 	if _, err := q.findFieldsByName(fieldName); err != nil {
@@ -131,7 +163,7 @@ func (q *Query) Where(fieldName string, fieldValue any) *Query {
 }
 
 func Delete(table any) *Query {
-	q := newWithTableInformation(table)
+	q := newQueryOnTable(table)
 	if q.Error != nil {
 		return q
 	}
@@ -140,24 +172,24 @@ func Delete(table any) *Query {
 	return q
 }
 
-func (q *Query) findFieldsByName(fieldsName ...string) ([]string, *common.Error) {
-	var fields []string
-	for _, fieldName := range fieldsName {
-		_, exists := q.Information.Fields[fieldName]
-		if !exists {
-			return nil, common.NewError().Status(common.ErrNotFound).Description(fieldName + " does not exist in " + q.Information.Name)
-		}
-		fields = append(fields, fieldName)
-	}
-	return fields, nil
-}
-
-func newWithTableInformation(t any) *Query {
+func newQueryOnTable(t any) *Query {
 	var q Query
-	tableInformation, err := table.GetInformation(t)
+	tableInformation, err := tables.Table(t)
 	if err != nil {
 		return q.SetError(err)
 	}
 	q.Information = tableInformation
 	return &q
+}
+
+func (q *Query) findFieldsByName(fieldsName ...string) ([]string, *Error) {
+	var fields []string
+	for _, fieldName := range fieldsName {
+		_, exists := q.Information.Fields[fieldName]
+		if !exists {
+			return nil, NewError().Status(ErrNotFound).Description(fieldName + " does not exist in " + q.Information.Name)
+		}
+		fields = append(fields, fieldName)
+	}
+	return fields, nil
 }

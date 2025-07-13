@@ -1,13 +1,6 @@
-// Tags:
-// contraints: defines the constraints of the field.
-// as: defines the name of the field. If not present name will be the field name to lowercase.
-// type: defines the type of the field in case it is not implemented on reflection.
-package migrations
+package borm
 
 import (
-	"github.com/Noeeekr/borm/common"
-	"github.com/Noeeekr/borm/table"
-
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,9 +12,9 @@ var tables_to_drop []string
 func GetCreateQueries() []string {
 	return create_queries
 }
-func PrepareToDrop(t ...any) *common.Error {
+func PrepareToDrop(t ...any) *Error {
 	typ := reflect.TypeOf(t)
-	if res := common.IsStruct(typ); res != nil {
+	if res := isStruct(typ); res != nil {
 		return res
 	}
 	tableName := typ.Name()
@@ -30,7 +23,7 @@ func PrepareToDrop(t ...any) *common.Error {
 
 	return nil
 }
-func PrepareToCreate(tables ...any) *common.Error {
+func PrepareToCreate(tables ...any) *Error {
 	for _, t := range tables {
 		err := prepareToCreateOne(t)
 		if err != nil {
@@ -40,9 +33,9 @@ func PrepareToCreate(tables ...any) *common.Error {
 	return nil
 }
 
-func prepareToCreateOne(t any) *common.Error {
+func prepareToCreateOne(t any) *Error {
 	// Reflect table information
-	tableInformation, response := table.GetInformation(t)
+	tableInformation, response := tables.Table(t)
 	if response != nil {
 		return response
 	}

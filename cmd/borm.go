@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Noeeekr/borm/migrations"
-	"github.com/Noeeekr/borm/query"
+	"github.com/Noeeekr/borm"
 )
 
 type Users struct {
@@ -26,33 +25,40 @@ type Notifications struct {
 }
 
 func main() {
-	response := migrations.PrepareToCreate(
+	response := borm.PrepareToCreate(
 		Users{},
 		Notifications{},
 	)
 	if response != nil {
 		fmt.Println(response.String())
 	}
-	for _, query := range migrations.GetCreateQueries() {
+	for _, query := range borm.GetCreateQueries() {
 		fmt.Println(query)
 	}
 
 	fmt.Println(
-		query.
+		borm.
 			Select(Users{}, "id", "email", "name").
 			Where("email", "noeeekr@gmail.com").Where("id", 10).
 			Query,
 	)
 	fmt.Println(
-		query.
+		borm.
 			Insert(Users{}, "id", "email", "name").
 			Values(100, "100", "100").
 			Query,
 	)
 	fmt.Println(
-		query.
+		borm.
 			Delete(Users{}).
 			Where("id", 10).
+			Query,
+	)
+	fmt.Println(
+		borm.
+			Update(Users{}).
+			Where("id", 10).
+			Set("id", time.Now()).
 			Query,
 	)
 }
