@@ -1,6 +1,7 @@
 package registers
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"time"
@@ -25,11 +26,13 @@ type Table struct {
 	Fields map[TableColumnName]*TableColumns
 	Error  *common.Error
 
-	requiredRoles  []RoleName
-	requiredTables []*Table
+	RequiredRoles  []RoleMethods
+	RequiredTables []*Table
 
 	// (RoleName) can have (TablePrivileges) on columns (TableColumnName)
 	privileges map[RoleName]map[TableColumnName]TablePrivilege
+
+	cache *TableCache
 }
 
 type TableColumnName string
@@ -70,6 +73,7 @@ func (m *TableCache) Table(v any) *Table {
 		fieldInformation.Type = parseFieldType(field.Type.Name())
 		tableField := tagParser.Override(fieldInformation).ParseRaw(string(field.Tag.Get("borm")))
 		information.Fields[tableField.Name] = tableField
+		information.cache = m
 	}
 
 	(*m)[tableName] = information
@@ -78,22 +82,65 @@ func (m *TableCache) Table(v any) *Table {
 }
 func (t *Table) NeedTables(dependencies ...*Table) *Table {
 	for _, dependency := range dependencies {
-		if _, ok := (*Tables)[dependency.Name]; !ok {
+		if _, ok := (*t.cache)[dependency.Name]; !ok {
 			t.Error = common.NewError().
 				Description("Table is not registered. Unable to use it as a dependency.").
 				Status(common.ErrNotFound)
 			return t
 		}
 	}
-	t.requiredTables = append(t.requiredTables, dependencies...)
+	t.RequiredTables = append(t.RequiredTables, dependencies...)
 	return t
 }
-func (t *Table) NeedRoles(dependencies string) {
-	for _, dependencie := range dependencies {
-		if dependencie == '3' {
+func (t *Table) NeedRoles(dependencies ...RoleMethods) *Table {
+	t.RequiredRoles = append(t.RequiredRoles, dependencies...)
+	return t
+}
 
-		}
+func (m *Table) Update() *Query {
+	q := newQueryOnTable(m)
+	q.Query += fmt.Sprintf("UPDATE %s ", m.Name)
+	q.typ = UPDATE
+	return q
+}
+func (m *Table) Select(fieldsName ...TableColumnName) *Query {
+	q := newQueryOnTable(m)
+	if q.Error != nil {
+		return q
 	}
+	fields, err := q.findFieldsByName(fieldsName...)
+	if err != nil {
+		q.Error = err
+		return q
+	}
+	q.typ = SELECT
+	q.Query = fmt.Sprintf("SELECT %s FROM %s ", strings.Join(fields, ", "), q.Information.Name)
+	return q
+}
+
+func (m *Table) Insert(table *Table, fieldsName ...TableColumnName) *Query {
+	q := newQueryOnTable(m)
+	if q.Error != nil {
+		return q
+	}
+	fields, err := q.findFieldsByName(fieldsName...)
+	if err != nil {
+		q.Error = err
+		return q
+	}
+	q.typ = INSERT
+	q.requiredValueLength = len(fieldsName)
+	q.Query = fmt.Sprintf("INSERT INTO %s (%s) ", q.Information.Name, strings.Join(fields, ", "))
+	return q
+}
+func (m *Table) Delete() *Query {
+	q := newQueryOnTable(m)
+	if q.Error != nil {
+		return q
+	}
+	q.typ = DELETE
+	q.Query += fmt.Sprintf("DELETE FROM %s ", q.Information.Name)
+	return q
 }
 func parseFieldType(typname string) string {
 	switch typname {

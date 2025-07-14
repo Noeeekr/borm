@@ -1,68 +1,30 @@
-package borm
+package registers
 
 import (
 	"fmt"
 	"strings"
 
 	"github.com/Noeeekr/borm/common"
-	"github.com/Noeeekr/borm/internal/registers"
 )
 
 type QueryType int
 
 type Query struct {
-	typ                 registers.TablePrivilege
+	typ                 TablePrivilege
 	requiredValueLength int
-	values              []any
+	CurrentValues       []any
 	placeholderIndex    int
 
 	hasWhere bool
 	hasSet   bool
 
 	Query       string
-	Information *registers.Table
+	Information *Table
 	Error       *common.Error
 }
 
 func (q *Query) SetError(e *common.Error) *Query {
 	q.Error = e
-	return q
-}
-
-func Update(table *registers.Table) *Query {
-	q := newQueryOnTable(table)
-	q.Query += fmt.Sprintf("UPDATE %s ", table.Name)
-	q.typ = UPDATE
-	return q
-}
-func Select(table *registers.Table, fieldsName ...registers.TableColumnName) *Query {
-	q := newQueryOnTable(table)
-	if q.Error != nil {
-		return q
-	}
-	fields, err := q.findFieldsByName(fieldsName...)
-	if err != nil {
-		q.Error = err
-		return q
-	}
-	q.typ = SELECT
-	q.Query = fmt.Sprintf("SELECT %s FROM %s ", strings.Join(fields, ", "), q.Information.Name)
-	return q
-}
-
-func Insert(table *registers.Table, fieldsName ...registers.TableColumnName) *Query {
-	q := newQueryOnTable(table)
-	if q.Error != nil {
-		return q
-	}
-	fields, err := q.findFieldsByName(fieldsName...)
-	if err != nil {
-		q.Error = err
-		return q
-	}
-	q.typ = INSERT
-	q.requiredValueLength = len(fieldsName)
-	q.Query = fmt.Sprintf("INSERT INTO %s (%s) ", q.Information.Name, strings.Join(fields, ", "))
 	return q
 }
 func (q *Query) Values(values ...any) *Query {
@@ -98,11 +60,11 @@ func (q *Query) Values(values ...any) *Query {
 		fields[i] = fmt.Sprintf("(%s)", strings.Join(fieldValues, ", "))
 	}
 
-	q.values = values
+	q.CurrentValues = values
 	q.Query += fmt.Sprintf("VALUES %s ", strings.Join(fields, ","))
 	return q
 }
-func (q *Query) Set(field registers.TableColumnName, value any) *Query {
+func (q *Query) Set(field TableColumnName, value any) *Query {
 	if q.Error != nil {
 		return q
 	}
@@ -124,16 +86,11 @@ func (q *Query) Set(field registers.TableColumnName, value any) *Query {
 
 	q.Query += fmt.Sprintf("%s = $%d", field, q.placeholderIndex)
 	q.placeholderIndex++
-	q.values = append(q.values, value)
+	q.CurrentValues = append(q.CurrentValues, value)
 	return q
 }
 
-type WhereCondition struct {
-	Field string
-	Value any
-}
-
-func (q *Query) Where(fieldName registers.TableColumnName, fieldValue any) *Query {
+func (q *Query) Where(fieldName TableColumnName, fieldValue any) *Query {
 	if q.Error != nil {
 		return q
 	}
@@ -155,36 +112,11 @@ func (q *Query) Where(fieldName registers.TableColumnName, fieldValue any) *Quer
 
 	q.Query += fmt.Sprintf("%s = $%d ", fieldName, q.placeholderIndex)
 	q.placeholderIndex++
-	q.values = append(q.values, fieldValue)
+	q.CurrentValues = append(q.CurrentValues, fieldValue)
 	return q
 }
 
-func Delete(table *registers.Table) *Query {
-	q := newQueryOnTable(table)
-	if q.Error != nil {
-		return q
-	}
-	q.typ = DELETE
-	q.Query += fmt.Sprintf("DELETE FROM %s ", q.Information.Name)
-	return q
-}
-
-func newQueryOnTable(t *registers.Table) *Query {
-	var q Query
-	if t == nil {
-		q.Error = common.NewError().Description("Cannot query nil table").Status(common.ErrEmpty)
-		return &q
-	}
-	table := (*registers.Tables)[t.Name]
-	if table.Error != nil {
-		return q.SetError(table.Error)
-	}
-	q.Information = table
-	q.placeholderIndex = 1
-	return &q
-}
-
-func (q *Query) findFieldsByName(fieldsName ...registers.TableColumnName) ([]string, *common.Error) {
+func (q *Query) findFieldsByName(fieldsName ...TableColumnName) ([]string, *common.Error) {
 	var fields []string
 	for _, fieldName := range fieldsName {
 		_, exists := q.Information.Fields[fieldName]
@@ -196,4 +128,19 @@ func (q *Query) findFieldsByName(fieldsName ...registers.TableColumnName) ([]str
 		fields = append(fields, string(fieldName))
 	}
 	return fields, nil
+}
+
+func newQueryOnTable(t *Table) *Query {
+	var q Query
+	if t == nil {
+		q.Error = common.NewError().Description("Cannot query nil table").Status(common.ErrEmpty)
+		return &q
+	}
+	table := (*t.cache)[t.Name]
+	if table.Error != nil {
+		return q.SetError(table.Error)
+	}
+	q.Information = table
+	q.placeholderIndex = 1
+	return &q
 }

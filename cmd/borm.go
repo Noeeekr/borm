@@ -31,6 +31,7 @@ func main() {
 			ENVIRONMENT
 				- users
 					- with password
+					- with database
 				- databases (using users)
 					- owner user
 			RELATIONS
@@ -64,47 +65,54 @@ func main() {
 		database.Migrate.Environment()
 		database.Migrate.Relations()
 	*/
-	database := borm.NewDatabase(nil)
+	postgres := borm.On("postgres", "postgres", nil)
 
-	TABLE_USERS := database.Table(Users{})
-	TABLE_NOTIFICATIONS := database.Table(Notifications{}).NeedTables(TABLE_USERS)
+	// Create new database environments
+	DEVELOPMENT_USER := postgres.User("DEVELOPER")
+	DEVELOPMENT_DATABASE := postgres.NewDatabase("DEVELOPMENT", DEVELOPMENT_USER.Name)
+	development, err := postgres.Environment(DEVELOPMENT_DATABASE)
+	if err != nil {
+		fmt.Println(err.String())
+		return
+	}
 
-	NOEEEKR := database.User("NOEEEKR THE DESTROYER")
-	NOEEEKR.
-		GrantPrivileges(TABLE_USERS, borm.INSERT, borm.DELETE, borm.UPDATE).
-		ToColumns("id", "name")
-
-	database.Migrate.Environment()
-	database.Migrate.Relations()
+	// Create new database relations
+	GENDER := development.Enum("GENDER", "MAN", "WOMEN")
+	TABLE_USERS := development.Table(Users{}).NeedRoles(GENDER)
+	TABLE_NOTIFICATIONS := development.Table(Notifications{}).NeedTables(TABLE_USERS)
+	development.Relations()
 
 	fmt.Println(
-		borm.
-			Select(TABLE_USERS, "id", "email", "name").
+		"database name and owner:", DEVELOPMENT_DATABASE.Name, DEVELOPMENT_DATABASE.Owner,
+	)
+	fmt.Println(
+		TABLE_USERS.
+			Select("id", "email", "name").
 			Where("email", "noeeekr@gmail.com").Where("id", 10).
 			Query,
 	)
 	fmt.Println(
-		borm.
+		TABLE_USERS.
 			Insert(TABLE_USERS, "id", "email", "name").
 			Values(100, "100", "100").
 			Query,
 	)
 	fmt.Println(
-		borm.
-			Delete(TABLE_NOTIFICATIONS).
+		TABLE_NOTIFICATIONS.
+			Delete().
 			Where("pip", 10).
 			Query,
 	)
 	fmt.Println(
-		borm.
-			Update(TABLE_NOTIFICATIONS).
+		TABLE_NOTIFICATIONS.
+			Update().
 			Where("pip", 10).
 			Set("pip", 999).
 			Query,
 	)
 	fmt.Println(
-		borm.
-			Update(TABLE_USERS).
+		TABLE_USERS.
+			Update().
 			Where("id", 10011).
 			Set("id", 100).
 			Set("name", "peter").

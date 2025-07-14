@@ -4,9 +4,7 @@ import "strings"
 
 type RoleName string
 type RoleType string
-type RoleCache struct {
-	cache map[string]RoleMethods
-}
+type RoleCache map[RoleName]RoleMethods
 type Role struct {
 	RoleMethods
 
@@ -28,10 +26,6 @@ type Enum struct {
 	options []string
 }
 
-type Database struct {
-	Name string
-}
-
 const (
 	ENUM RoleType = "enum"
 	USER RoleType = "user"
@@ -50,11 +44,9 @@ func (r *Enum) Options() []string {
 func (r *RoleCache) Enum(name string, values ...string) *Enum {
 	roleName := RoleName(strings.ToLower(name))
 	enum := &Enum{Role: &Role{Name: roleName, Type: ENUM}, options: values}
-	r.cache[name] = enum
+	(*r)[roleName] = enum
 	return enum
 }
 func NewRoleCache() *RoleCache {
-	return &RoleCache{
-		cache: map[string]RoleMethods{},
-	}
+	return &RoleCache{}
 }
