@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	"database/sql"
+
 	"github.com/Noeeekr/borm"
+	_ "github.com/lib/pq"
 )
 
 type Users struct {
@@ -65,10 +68,22 @@ func main() {
 		database.Migrate.Environment()
 		database.Migrate.Relations()
 	*/
-	postgres := borm.On("postgres", "postgres", nil)
+
+	db, e := sql.Open("postgres", "postgres://postgres:noeeekr@db/postgres?sslmode=disable")
+	if e != nil {
+		fmt.Println(e.Error())
+		return
+	}
+	e = db.Ping()
+	if e != nil {
+		fmt.Println(e.Error())
+		return
+	}
+	defer db.Close()
+	postgres := borm.On("postgres", "postgres", db)
 
 	// Create new database environments
-	DEVELOPMENT_USER := postgres.User("DEVELOPER")
+	DEVELOPMENT_USER := postgres.User("DEVELOPER", "developer")
 	DEVELOPMENT_DATABASE := postgres.NewDatabase("DEVELOPMENT", DEVELOPMENT_USER.Name)
 	development, err := postgres.Environment(DEVELOPMENT_DATABASE)
 	if err != nil {

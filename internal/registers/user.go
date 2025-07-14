@@ -54,9 +54,9 @@ func (r *User) WithPassword(password string) *User {
 	r.password = password
 	return r
 }
-func (r *RoleCache) User(name string) *User {
+func (r *RoleCache) User(name, password string) *User {
 	roleName := RoleName(strings.ReplaceAll(strings.ToLower(name), " ", "_"))
-	user := &User{Role: &Role{Name: roleName, Type: USER}}
+	user := &User{Role: &Role{Name: roleName, Type: USER}, password: password}
 	(*r)[roleName] = user
 	return user
 }

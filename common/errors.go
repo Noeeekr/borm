@@ -29,7 +29,7 @@ func (e *Error) String() string {
 	return fmt.Sprintf("[%s] %s", e.Stat, e.Desc)
 }
 func (e *Error) Append(d string) *Error {
-	e.Desc += d
+	e.Desc += ": " + d
 	return e
 }
 func (e *Error) Description(d string) *Error {

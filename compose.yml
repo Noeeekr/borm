@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:17.5
+    volumes:
+      - borm_volume:/var/lib/postgresql/data
+    networks:
+      - internal
+    env_file:
+      - ./postgres.env
+
+  borm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/borm
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  borm_volume:
