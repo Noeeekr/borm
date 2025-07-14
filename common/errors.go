@@ -1,4 +1,4 @@
-package borm
+package common
 
 import "fmt"
 
