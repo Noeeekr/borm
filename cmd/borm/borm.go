@@ -7,7 +7,6 @@ import (
 	"database/sql"
 
 	"github.com/Noeeekr/borm"
-	_ "github.com/lib/pq"
 )
 
 type Users struct {
@@ -80,23 +79,26 @@ func main() {
 		return
 	}
 	defer db.Close()
-	postgres := borm.On("postgres", "postgres", db)
-
+	postgres, err := borm.On("postgres", "noeeekr", "db", "postgres")
+	if err != nil {
+		fmt.Println(err)
+	}
 	// Create new database environments
 	DEVELOPMENT_USER := postgres.User("DEVELOPER", "developer")
-	DEVELOPMENT_DATABASE := postgres.NewDatabase("DEVELOPMENT", DEVELOPMENT_USER.Name)
-	development, err := postgres.Environment(DEVELOPMENT_DATABASE)
+	DEVELOPMENT_DATABASE := postgres.NewDatabase("DEVELOPMENT", DEVELOPMENT_USER)
+	CONFIGURATION := borm.NewConfiguration().RecreateExisting().UndoOnError()
+	development, err := postgres.Environment(DEVELOPMENT_DATABASE, CONFIGURATION)
 	if err != nil {
 		fmt.Println(err.String())
 		return
 	}
+	defer development.DB().Close()
 
 	// Create new database relations
-	GENDER := development.Enum("GENDER", "MAN", "WOMEN")
-	TABLE_USERS := development.Table(Users{}).NeedRoles(GENDER)
+	LEVEL := development.Enum("LEVEL", "JUNIOR", "PLENO", "SENIOR")
+	TABLE_USERS := development.Table(Users{}).NeedRoles(LEVEL)
 	TABLE_NOTIFICATIONS := development.Table(Notifications{}).NeedTables(TABLE_USERS)
 	development.Relations()
-
 	fmt.Println(
 		"database name and owner:", DEVELOPMENT_DATABASE.Name, DEVELOPMENT_DATABASE.Owner,
 	)

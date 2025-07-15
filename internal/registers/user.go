@@ -55,8 +55,12 @@ func (r *User) WithPassword(password string) *User {
 	return r
 }
 func (r *RoleCache) User(name, password string) *User {
-	roleName := RoleName(strings.ReplaceAll(strings.ToLower(name), " ", "_"))
-	user := &User{Role: &Role{Name: roleName, Type: USER}, password: password}
-	(*r)[roleName] = user
+	user := NewUser(name, password)
+	(*r)[user.Name] = user
 	return user
+}
+
+func NewUser(name, password string) *User {
+	roleName := RoleName(strings.ReplaceAll(strings.ToLower(name), " ", "_"))
+	return &User{Role: &Role{Name: roleName, Type: USER}, password: password}
 }

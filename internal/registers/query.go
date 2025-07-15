@@ -43,7 +43,7 @@ func (q *Query) Values(values ...any) *Query {
 	if valueAmount%q.requiredValueLength != 0 {
 		q.Error = common.NewError().
 			Description("Invalid value amount").
-			Append(fmt.Sprintf("Wanted: multiple of %d. Recieved: %d", q.requiredValueLength, valueAmount)).
+			After(fmt.Sprintf("Wanted: multiple of %d. Recieved: %d", q.requiredValueLength, valueAmount)).
 			Status(common.ErrSyntax)
 		return q
 	}
