@@ -12,37 +12,82 @@ func (m *DatabaseManager) Environment(database *registers.Database, configuratio
 		configuration = &Configuration{}
 	}
 
-	var err *common.Error
-	createdUsers := []*registers.User{}
-	for _, role := range *m.Database.RoleCache {
-		if role.RoleType() != registers.USER {
-			continue
+	registeredUsers := []*registers.User{}
+	for _, role := range *database.RoleCache {
+		if role.RoleType() == registers.USER {
+			user := role.(*registers.User)
+			registeredUsers = append(registeredUsers, user)
 		}
-		user := role.(*registers.User)
-
-		fmt.Println("[Creating database user]:", user.Name)
-		err = m.createDatabaseUser(configuration, user)
-		if err != nil {
-			fmt.Printf("[%s]: Failure on database user creation: %s\n", err.Stat, err.Desc)
-			break
-		}
-		createdUsers = append(createdUsers, user)
 	}
+
+	created, err := m.migrateUsers(configuration, registeredUsers...)
 	if err != nil {
 		if configuration.undoOnError {
-			return nil, err.Join(m.dropDatabaseUsers(createdUsers...))
+			return nil, err.Join(m.dropDatabaseUsers(created...))
 		}
 		return nil, err
 	}
 
-	_, err2 := m.db.Exec(parseCreateDatabaseQuery(database).Query)
-	if err2 != nil {
-		return nil, common.NewError().Description(err2.Error()).Status(common.ErrSyntax)
+	err = m.migrateDatabase(database)
+	if err != nil {
+		if configuration.undoOnError {
+			return nil, err.Join(m.dropDatabaseUsers(created...))
+		}
+		return nil, err
 	}
 
 	return Connect(string(database.Owner.Name), database.Owner.Password(), m.host, string(database.Name))
 }
 
+func (m *DatabaseManager) migrateUsers(configuration *Configuration, users ...*registers.User) ([]*registers.User, *common.Error) {
+	created := []*registers.User{}
+	for _, user := range users {
+		fmt.Println("[Creating database user]:", user.Name)
+		err := m.migrateDatabaseUser(configuration, user)
+		if err != nil {
+			return created, err
+		}
+		created = append(created, user)
+	}
+	return created, nil
+}
+func (m *DatabaseManager) migrateDatabaseUser(configuration *Configuration, user *registers.User) *common.Error {
+	rows, err := m.db.Query("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname = $1;", user.Name)
+	if err != nil {
+		return common.NewError().Description("Failure while checking if user exists").After(err.Error()).Status(common.ErrSyntax)
+	}
+
+	var userExists bool
+	if rows.Next() {
+		if configuration.ignoreExisting {
+			return nil
+		}
+		userExists = true
+	}
+	rows.Close()
+
+	if userExists && configuration.reacreateExisting {
+
+		err := m.dropDatabaseUsers(user)
+		if err != nil {
+			return err
+		}
+	}
+
+	createUserQuery := parseCreateUserQuery(user)
+	_, err = m.db.Exec(createUserQuery.Query)
+	if err != nil {
+		return common.NewError().Description("Failed creating user").After(err.Error()).Status(common.ErrFailedOperation)
+	}
+	return nil
+}
+func (m *DatabaseManager) migrateDatabase(database *registers.Database) *common.Error {
+	_, err := m.db.Exec(parseCreateDatabaseQuery(database).Query)
+	if err != nil {
+		return common.NewError().Description(err.Error()).Status(common.ErrSyntax)
+	}
+	return nil
+}
 func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Error {
 	for _, user := range users {
 		rows, err := m.db.Query("SELECT datname FROM pg_catalog.pg_database d INNER JOIN pg_catalog.pg_roles u ON d.datdba = u.oid WHERE rolname = $1;", user.Name)
@@ -73,35 +118,6 @@ func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Er
 		if err != nil {
 			return common.NewError().Description(err.Error()).Status(common.ErrFailedOperation)
 		}
-	}
-	return nil
-}
-func (m *DatabaseManager) createDatabaseUser(configuration *Configuration, user *registers.User) *common.Error {
-	rows, err := m.db.Query("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname = $1;", user.Name)
-	if err != nil {
-		return common.NewError().Description("Failure while checking if user exists").After(err.Error()).Status(common.ErrSyntax)
-	}
-
-	var userExists bool
-	if rows.Next() {
-		if configuration.ignoreExisting {
-			return nil
-		}
-		userExists = true
-	}
-	rows.Close()
-
-	if userExists && configuration.reacreateExisting {
-		err := m.dropDatabaseUsers(user)
-		if err != nil {
-			return err
-		}
-	}
-
-	createUserQuery := parseCreateUserQuery(user)
-	_, err = m.db.Exec(createUserQuery.Query)
-	if err != nil {
-		return common.NewError().Description("Failed creating user").After(err.Error()).Status(common.ErrFailedOperation)
 	}
 	return nil
 }
