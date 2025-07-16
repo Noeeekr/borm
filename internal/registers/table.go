@@ -14,6 +14,7 @@ const (
 	UPDATE
 	DELETE
 	INSERT
+	DROP
 
 	ALL
 )

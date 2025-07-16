@@ -1,13 +1,14 @@
 package registers
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/Noeeekr/borm/common"
 )
 
-type QueryType int
+type QueryRowsScanner func(rows *sql.Rows, throwErrorOnFound bool) *common.Error
 
 type Query struct {
 	typ                 TablePrivilege
@@ -21,6 +22,29 @@ type Query struct {
 	Query       string
 	Information *Table
 	Error       *common.Error
+
+	RowsScanner       QueryRowsScanner
+	throwErrorOnFound bool
+}
+
+// This ******* string becomes a ******** of complex settings just to become a ******* string again at the end, funny isnt it?
+func NewQuery(q string) *Query {
+	return &Query{Query: q}
+}
+func (q *Query) Scan(rows *sql.Rows) *common.Error {
+	return q.RowsScanner(rows, q.throwErrorOnFound)
+}
+
+// Defines a function to handle returned rows. If no function is passed at all then it doesn't query the returned rows.
+func (q *Query) Scanner(fun QueryRowsScanner) *Query {
+	q.RowsScanner = fun
+	return q
+}
+
+// Switch to throw response error on found instead of not found..
+func (q *Query) ThrowErrorOnFound() *Query {
+	q.throwErrorOnFound = true
+	return q
 }
 
 func (q *Query) SetError(e *common.Error) *Query {
@@ -32,7 +56,7 @@ func (q *Query) Values(values ...any) *Query {
 		return q
 	}
 	if q.typ == SELECT || q.typ == DELETE {
-		q.Error = common.NewError("Must be INSERT or UPDATE").Status(common.ErrInvalidMethodChain)
+		q.Error = common.NewError("Must be INSERT | UPDATE ").Status(common.ErrInvalidMethodChain)
 		return q
 	}
 	var valueAmount = len(values)

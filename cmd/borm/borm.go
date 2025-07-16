@@ -10,15 +10,15 @@ import (
 )
 
 type Users struct {
-	Id int `type:"SERIAL" constraints:"PRIMARY KEY"`
+	Id int `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
 
-	Name     string `constraints:"NOT NULL"`
-	Email    string `constraints:"NOT NULL"`
-	Password string `constraints:"NOT NULL"`
+	Name     string `borm:"(CONSTRAINTS, NOT NULL)"`
+	Email    string `borm:"(CONSTRAINTS, NOT NULL)"`
+	Password string `borm:"(CONSTRAINTS, NOT NULL)"`
 
-	DeletedAt time.Time `as:"deleted_at"`
-	UpdatedAt time.Time `as:"updated_at"`
-	CreatedAt time.Time `as:"created_at"`
+	DeletedAt time.Time `borm:"(NAME, deleted_at)"`
+	UpdatedAt time.Time `borm:"(NAME, updated_at)"`
+	CreatedAt time.Time `borm:"(NAME, created_at)"`
 }
 type Notifications struct {
 	id         int `borm:"(NAME, pip) (FOREIGN KEY, USERS, ID)"`
@@ -98,7 +98,14 @@ func main() {
 	LEVEL := development.Enum("LEVEL", "JUNIOR", "PLENO", "SENIOR")
 	TABLE_USERS := development.Table(Users{}).NeedRoles(LEVEL)
 	TABLE_NOTIFICATIONS := development.Table(Notifications{}).NeedTables(TABLE_USERS)
-	development.Relations()
+
+	DEVELOPMENT_USER.GrantPrivileges(TABLE_USERS, borm.ALL)
+
+	err = development.Relations(CONFIGURATION)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	fmt.Println(
 		"database name and owner:", DEVELOPMENT_DATABASE.Name, DEVELOPMENT_DATABASE.Owner,
 	)

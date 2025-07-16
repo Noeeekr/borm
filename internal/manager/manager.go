@@ -11,6 +11,10 @@ import (
 type DatabaseManager struct {
 	host string
 	db   *sql.DB
+
+	// Stores the created stuff
+	cache map[string]bool
+
 	*registers.Database
 }
 
@@ -19,12 +23,17 @@ func Connect(user, password, host, database string) (*DatabaseManager, *common.E
 	if err != nil {
 		return nil, common.NewError(err.Error()).Status(common.ErrBadConnection)
 	}
-	return New(registers.DatabaseName(database), registers.NewUser(user, password), db), nil
+	if err := db.Ping(); err != nil {
+		return nil, common.NewError("Unable to ping database").Append(err.Error()).Status(common.ErrBadConnection)
+	}
+	return New(registers.DatabaseName(database), registers.NewUser(user, password), db, host), nil
 }
-func New(name registers.DatabaseName, user *registers.User, db *sql.DB) *DatabaseManager {
+func New(name registers.DatabaseName, user *registers.User, db *sql.DB, host string) *DatabaseManager {
 	return &DatabaseManager{
+		host:     host,
 		db:       db,
 		Database: registers.NewDatabase(name, user),
+		cache:    map[string]bool{},
 	}
 }
 func (m *DatabaseManager) DB() *sql.DB {

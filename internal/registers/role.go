@@ -37,10 +37,9 @@ func (r *Role) RoleName() RoleName {
 func (r *Role) RoleType() RoleType {
 	return r.Type
 }
-func (r *Enum) Options() []string {
+func (r *Enum) Values() []string {
 	return r.options
 }
-
 func (r *RoleCache) Enum(name string, values ...string) *Enum {
 	roleName := RoleName(strings.ToLower(name))
 	enum := &Enum{Role: &Role{Name: roleName, Type: ENUM}, options: values}
