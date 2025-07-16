@@ -3,8 +3,9 @@ package common
 import "fmt"
 
 type Error struct {
-	Stat string
-	Desc string
+	Stat  string
+	Desc  string
+	Joins []*Error
 }
 
 type ErrorStatus string
@@ -32,7 +33,16 @@ func NewError(description string) *Error {
 }
 
 func (e *Error) String() string {
-	return e.Stat + e.Desc
+	var subjacentErrors string
+	for i, err := range e.Joins {
+		subjacentErrors += "\n"
+		for range i {
+			subjacentErrors += "\t"
+		}
+		subjacentErrors += err.String()
+	}
+
+	return e.Stat + e.Desc + subjacentErrors
 }
 
 // Appends to the end of the last description with a separator
@@ -56,6 +66,6 @@ func (e *Error) Join(e2 *Error) *Error {
 	if e2 == nil {
 		return e
 	}
-	e.Desc += "\n\t" + e2.String()
+	e.Joins = append(e.Joins, e2)
 	return e
 }
