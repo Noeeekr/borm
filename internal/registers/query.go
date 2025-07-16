@@ -32,18 +32,17 @@ func (q *Query) Values(values ...any) *Query {
 		return q
 	}
 	if q.typ == SELECT || q.typ == DELETE {
-		q.Error = common.NewError().Status(common.ErrInvalidMethodChain).Description("Must be INSERT or UPDATE")
+		q.Error = common.NewError("Must be INSERT or UPDATE").Status(common.ErrInvalidMethodChain)
 		return q
 	}
 	var valueAmount = len(values)
 	if valueAmount == 0 {
-		q.Error = common.NewError().Description("Cannot use empty values").Status(common.ErrEmpty)
+		q.Error = common.NewError("Cannot use empty values").Status(common.ErrEmpty)
 		return q
 	}
 	if valueAmount%q.requiredValueLength != 0 {
-		q.Error = common.NewError().
-			Description("Invalid value amount").
-			After(fmt.Sprintf("Wanted: multiple of %d. Recieved: %d", q.requiredValueLength, valueAmount)).
+		q.Error = common.NewError("Invalid value amount").
+			Append(fmt.Sprintf("Wanted: multiple of %d. Recieved: %d", q.requiredValueLength, valueAmount)).
 			Status(common.ErrSyntax)
 		return q
 	}
@@ -69,7 +68,7 @@ func (q *Query) Set(field TableColumnName, value any) *Query {
 		return q
 	}
 	if q.typ != UPDATE {
-		q.Error = common.NewError().Status(common.ErrInvalidMethodChain).Description("Must be INSERT or UPDATE")
+		q.Error = common.NewError("Must be INSERT or UPDATE").Status(common.ErrInvalidMethodChain)
 		return q
 	}
 	if _, err := q.findFieldsByName(field); err != nil {
@@ -95,7 +94,7 @@ func (q *Query) Where(fieldName TableColumnName, fieldValue any) *Query {
 		return q
 	}
 	if q.typ == INSERT {
-		q.Error = common.NewError().Status(common.ErrInvalidMethodChain).Description("Must be INSERT | UPDATE | DELETE")
+		q.Error = common.NewError("Must be INSERT | UPDATE | DELETE").Status(common.ErrInvalidMethodChain)
 		return q
 	}
 	if _, err := q.findFieldsByName(fieldName); err != nil {
@@ -121,9 +120,8 @@ func (q *Query) findFieldsByName(fieldsName ...TableColumnName) ([]string, *comm
 	for _, fieldName := range fieldsName {
 		_, exists := q.Information.Fields[fieldName]
 		if !exists {
-			return nil, common.NewError().
-				Status(common.ErrNotFound).
-				Description(fmt.Sprintf("%s does not exist in %s", fieldName, q.Information.Name))
+			return nil, common.NewError(fmt.Sprintf("%s does not exist in %s", fieldName, q.Information.Name)).
+				Status(common.ErrNotFound)
 		}
 		fields = append(fields, string(fieldName))
 	}
@@ -133,7 +131,7 @@ func (q *Query) findFieldsByName(fieldsName ...TableColumnName) ([]string, *comm
 func newQueryOnTable(t *Table) *Query {
 	var q Query
 	if t == nil {
-		q.Error = common.NewError().Description("Cannot query nil table").Status(common.ErrEmpty)
+		q.Error = common.NewError("Cannot query nil table").Status(common.ErrEmpty)
 		return &q
 	}
 	table := (*t.cache)[t.Name]

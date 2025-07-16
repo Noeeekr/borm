@@ -83,8 +83,7 @@ func (m *TableCache) Table(v any) *Table {
 func (t *Table) NeedTables(dependencies ...*Table) *Table {
 	for _, dependency := range dependencies {
 		if _, ok := (*t.cache)[dependency.Name]; !ok {
-			t.Error = common.NewError().
-				Description("Table is not registered. Unable to use it as a dependency.").
+			t.Error = common.NewError("Table is not registered. Unable to use it as a dependency.").
 				Status(common.ErrNotFound)
 			return t
 		}

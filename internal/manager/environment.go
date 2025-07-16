@@ -54,7 +54,7 @@ func (m *DatabaseManager) migrateUsers(configuration *Configuration, users ...*r
 func (m *DatabaseManager) migrateDatabaseUser(configuration *Configuration, user *registers.User) *common.Error {
 	rows, err := m.db.Query("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname = $1;", user.Name)
 	if err != nil {
-		return common.NewError().Description("Failure while checking if user exists").After(err.Error()).Status(common.ErrSyntax)
+		return common.NewError("Failure while checking if user exists").Append(err.Error()).Status(common.ErrSyntax)
 	}
 
 	var userExists bool
@@ -77,14 +77,14 @@ func (m *DatabaseManager) migrateDatabaseUser(configuration *Configuration, user
 	createUserQuery := parseCreateUserQuery(user)
 	_, err = m.db.Exec(createUserQuery.Query)
 	if err != nil {
-		return common.NewError().Description("Failed creating user").After(err.Error()).Status(common.ErrFailedOperation)
+		return common.NewError("Failed creating user").Append(err.Error()).Status(common.ErrFailedOperation)
 	}
 	return nil
 }
 func (m *DatabaseManager) migrateDatabase(database *registers.Database) *common.Error {
 	_, err := m.db.Exec(parseCreateDatabaseQuery(database).Query)
 	if err != nil {
-		return common.NewError().Description(err.Error()).Status(common.ErrSyntax)
+		return common.NewError(err.Error()).Status(common.ErrSyntax)
 	}
 	return nil
 }
@@ -92,7 +92,7 @@ func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Er
 	for _, user := range users {
 		rows, err := m.db.Query("SELECT datname FROM pg_catalog.pg_database d INNER JOIN pg_catalog.pg_roles u ON d.datdba = u.oid WHERE rolname = $1;", user.Name)
 		if err != nil {
-			return common.NewError().Description(err.Error()).Status(common.ErrFailedOperation)
+			return common.NewError(err.Error()).Status(common.ErrFailedOperation)
 		}
 
 		var datnames []string
@@ -100,7 +100,7 @@ func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Er
 			var datname string
 			err := rows.Scan(&datname)
 			if err != nil {
-				return common.NewError().Description(err.Error()).Status(common.ErrFailedOperation)
+				return common.NewError(err.Error()).Status(common.ErrFailedOperation)
 			}
 			datnames = append(datnames, datname)
 		}
@@ -109,14 +109,14 @@ func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Er
 		for _, datname := range datnames {
 			_, err := m.db.Exec("DROP DATABASE " + datname)
 			if err != nil {
-				return common.NewError().Description("Failure while dropping database").After(err.Error()).Status(common.ErrFailedOperation)
+				return common.NewError("Failure while dropping database").Append(err.Error()).Status(common.ErrFailedOperation)
 			}
 		}
 
 		dropUserQuery := parseDropUserQuery(user)
 		_, err = m.db.Exec(dropUserQuery.Query)
 		if err != nil {
-			return common.NewError().Description(err.Error()).Status(common.ErrFailedOperation)
+			return common.NewError(err.Error()).Status(common.ErrFailedOperation)
 		}
 	}
 	return nil

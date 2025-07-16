@@ -30,7 +30,7 @@ func (u *User) Password() string {
 }
 func (u *User) GrantPrivileges(t *Table, p ...TablePrivilege) *UserPrivilegeRequest {
 	if len(p) == 0 {
-		t.Error = common.NewError().Description("User privileges should not be empty.").Status(common.ErrEmpty)
+		t.Error = common.NewError("User privileges should not be empty.").Status(common.ErrEmpty)
 	}
 	return &UserPrivilegeRequest{
 		User:       u,

@@ -17,7 +17,7 @@ type DatabaseManager struct {
 func Connect(user, password, host, database string) (*DatabaseManager, *common.Error) {
 	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", user, password, host, database))
 	if err != nil {
-		return nil, common.NewError().Description(err.Error()).Status(common.ErrBadConnection)
+		return nil, common.NewError(err.Error()).Status(common.ErrBadConnection)
 	}
 	return New(registers.DatabaseName(database), registers.NewUser(user, password), db), nil
 }

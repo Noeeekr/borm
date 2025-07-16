@@ -3,7 +3,7 @@ package common
 import "fmt"
 
 type Error struct {
-	Stat ErrorStatus
+	Stat string
 	Desc string
 }
 
@@ -24,32 +24,34 @@ const (
 	ErrBadConnection             ErrorStatus = "Bad connection"
 )
 
-func NewError() *Error {
+func NewError(description string) *Error {
 	return &Error{
 		Stat: "",
-		Desc: "",
+		Desc: description,
 	}
 }
 
 func (e *Error) String() string {
-	return fmt.Sprintf("[%s]: %s", e.Stat, e.Desc)
+	return e.Stat + e.Desc
 }
-func (e *Error) After(d string) *Error {
+
+// Appends to the end of the last description with a separator
+func (e *Error) Append(d string) *Error {
 	e.Desc += ": " + d
 	return e
 }
-func (e *Error) Before(d string) *Error {
+
+// Inserts before all other descriptions with a separator
+func (e *Error) Insert(d string) *Error {
 	e.Desc += d + ": "
 	return e
 }
-func (e *Error) Description(d string) *Error {
-	e.Desc = d
-	return e
-}
 func (e *Error) Status(s ErrorStatus) *Error {
-	e.Stat = s
+	e.Stat = fmt.Sprintf("[%s]: ", s)
 	return e
 }
+
+// Inserts a new error under the last error as a subjacent error
 func (e *Error) Join(e2 *Error) *Error {
 	if e2 == nil {
 		return e
