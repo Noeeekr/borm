@@ -1,11 +1,15 @@
 package common
 
-import "fmt"
+import (
+	"fmt"
+	"runtime/debug"
+)
 
 type Error struct {
-	Stat  string
-	Desc  string
-	Joins []*Error
+	Stat       string
+	Desc       string
+	Joins      []*Error
+	DebugStack string
 }
 
 type ErrorStatus string
@@ -26,9 +30,14 @@ const (
 )
 
 func NewError(description string) *Error {
+	var debugStack string
+	if Environment() == DEBUGGING {
+		debugStack += "\n\n[Debugging Stack]: \n\n" + string(debug.Stack())
+	}
 	return &Error{
-		Stat: "",
-		Desc: description,
+		Stat:       "",
+		Desc:       description,
+		DebugStack: debugStack,
 	}
 }
 
@@ -42,7 +51,7 @@ func (e *Error) String() string {
 		subjacentErrors += err.String()
 	}
 
-	return e.Stat + e.Desc + subjacentErrors
+	return e.Stat + e.Desc + subjacentErrors + e.DebugStack
 }
 
 // Appends to the end of the last description with a separator
