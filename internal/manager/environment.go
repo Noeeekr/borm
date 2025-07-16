@@ -28,7 +28,7 @@ func (m *DatabaseManager) Environment(database *registers.Database, configuratio
 		return nil, err
 	}
 
-	err = m.migrateDatabase(database)
+	err = m.migrateDatabase(configuration, database)
 	if err != nil {
 		if configuration.undoOnError {
 			return nil, err.Join(m.dropDatabaseUsers(created...))
@@ -81,10 +81,25 @@ func (m *DatabaseManager) migrateDatabaseUser(configuration *Configuration, user
 	}
 	return nil
 }
-func (m *DatabaseManager) migrateDatabase(database *registers.Database) *common.Error {
-	_, err := m.db.Exec(parseCreateDatabaseQuery(database).Query)
+func (m *DatabaseManager) migrateDatabase(configuration *Configuration, database *registers.Database) *common.Error {
+	rows, err := m.db.Query("SELECT datname FROM pg_catalog.pg_database WHERE datname = $1;", database.Name)
 	if err != nil {
 		return common.NewError(err.Error()).Status(common.ErrSyntax)
+	}
+	var exists bool = rows.Next()
+	defer rows.Close()
+	if exists && configuration.ignoreExisting {
+		return nil
+	}
+	if exists && configuration.reacreateExisting {
+		if err := m.dropDatabase(database); err != nil {
+			return err
+		}
+	}
+
+	_, err = m.db.Exec(parseCreateDatabaseQuery(database).Query)
+	if err != nil {
+		return common.NewError(err.Error()).Status(common.ErrFailedOperation)
 	}
 	return nil
 }
@@ -118,6 +133,13 @@ func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Er
 		if err != nil {
 			return common.NewError(err.Error()).Status(common.ErrFailedOperation)
 		}
+	}
+	return nil
+}
+func (m *DatabaseManager) dropDatabase(database *registers.Database) *common.Error {
+	_, err := m.db.Exec(fmt.Sprintf("DROP DATABASE %s;", database.Name))
+	if err != nil {
+		return common.NewError(err.Error()).Status(common.ErrFailedOperation)
 	}
 	return nil
 }
