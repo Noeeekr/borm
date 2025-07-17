@@ -2,13 +2,11 @@ package registers
 
 import (
 	"strings"
-
-	"github.com/Noeeekr/borm/common"
 )
 
 type UserMethods interface {
-	PrivilegedTables() []*Table
-	GrantPrivileges(*Table, ...TablePrivilege) *UserPrivilegeRequest
+	// PrivilegedTables() []*Table
+	// GrantPrivileges(*Table, ...TablePrivilege) *UserPrivilegeRequest
 	ToColumns(...TableColumnName) *User
 	Password() string
 }
@@ -20,25 +18,26 @@ type User struct {
 }
 type UserPrivilegeRequest struct {
 	*User
-	table      *Table
-	privileges []TablePrivilege
-	columns    []TableColumnName
+	table *Table
+	// privileges []TablePrivilege
+	columns []TableColumnName
 }
 
 func (u *User) Password() string {
 	return u.password
 }
-func (u *User) GrantPrivileges(t *Table, p ...TablePrivilege) *UserPrivilegeRequest {
-	if len(p) == 0 {
-		t.Error = common.NewError("User privileges should not be empty.").Status(common.ErrEmpty)
-	}
-	return &UserPrivilegeRequest{
-		User:       u,
-		table:      t,
-		privileges: p,
-		columns:    []TableColumnName{},
-	}
-}
+
+// func (u *User) GrantPrivileges(t *Table, p ...TablePrivilege) *UserPrivilegeRequest {
+// 	if len(p) == 0 {
+// 		t.Error = common.NewError("User privileges should not be empty.").Status(common.ErrEmpty)
+// 	}
+// 	return &UserPrivilegeRequest{
+// 		User:       u,
+// 		table:      t,
+// 		privileges: p,
+// 		columns:    []TableColumnName{},
+// 	}
+// }
 
 // If empty adds all columns to grant privilege
 func (r *UserPrivilegeRequest) ToColumns(c ...TableColumnName) *User {

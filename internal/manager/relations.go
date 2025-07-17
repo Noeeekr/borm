@@ -20,11 +20,10 @@ func (m *DatabaseManager) Relations(configuration *Configuration) *common.Error 
 		return common.NewError("Unable to migrate tables").Join(err).Status(common.ErrFailedTransaction)
 	}
 
-	_, err = t.Commit()
-	return err
+	return t.Commit()
 }
 func (m *DatabaseManager) validateTables() *common.Error {
-	for _, table := range *m.TableCache {
+	for _, table := range *m.Register.TableCache {
 		if table.Error != nil {
 			return table.Error
 		}
@@ -36,7 +35,7 @@ func (m *DatabaseManager) migrateTables(t *transaction.Transaction, configuratio
 		return err
 	}
 
-	for _, table := range *m.TableCache {
+	for _, table := range *m.Register.TableCache {
 		if err := m.migrateTable(t, table, configuration); err != nil {
 			return err
 		}
@@ -48,8 +47,8 @@ func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *regist
 	var exists bool
 	existsQuery := registers.NewQuery("SELECT tablename FROM pg_catalog.pg_tables WHERE tablename = $1").
 		Scanner(transaction.CheckExist(&exists))
-	existsQuery.CurrentValues = append(existsQuery.CurrentValues, table.Name)
-	_, err := t.Query(existsQuery)
+	existsQuery.CurrentValues = append(existsQuery.CurrentValues, table.TableName)
+	err := t.Do(existsQuery)
 	if err != nil {
 		return err
 	}
@@ -80,7 +79,7 @@ func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *regist
 	}
 
 	for _, subtable := range table.RequiredTables {
-		if ok := m.cache[string(subtable.Name)]; ok {
+		if ok := m.cache[string(subtable.TableName)]; ok {
 			continue
 		}
 
@@ -89,14 +88,13 @@ func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *regist
 			return err
 		}
 
-		m.cache[string(subtable.Name)] = true
+		m.cache[string(subtable.TableName)] = true
 	}
 
-	m.cache[string(table.Name)] = true
+	m.cache[string(table.TableName)] = true
 
 	query := parseCreateTableQuery(table)
-	_, err = t.Query(query)
-	return err
+	return t.Do(query)
 }
 func (m *DatabaseManager) migrateEnum(t *transaction.Transaction, enum *registers.Enum, configuration *Configuration) *common.Error {
 	var exists bool
@@ -114,20 +112,18 @@ func (m *DatabaseManager) migrateEnum(t *transaction.Transaction, enum *register
 			return err
 		}
 	}
-	_, err := t.Query(parseCreateEnumQuery(enum))
-	return err
+	return t.Do(parseCreateEnumQuery(enum))
 }
 func (m *DatabaseManager) dropEnum(t *transaction.Transaction, enum *registers.Enum) *common.Error {
 	query := registers.NewQuery("DROP TYPE $1;")
 	query.CurrentValues = append(query.CurrentValues, enum.Name)
-	_, err := t.Query(query)
-	return err
+	return t.Do(query)
 }
 func (m *DatabaseManager) dropTable(t *transaction.Transaction, table *registers.Table) *common.Error {
 	query := registers.NewQuery("DROP TABLE $1 CASCADE;")
 	query.CurrentValues = append(query.CurrentValues, table.Name)
 
-	t.Query(query)
+	t.Do(query)
 
 	return nil
 }
@@ -144,7 +140,7 @@ func parseCreateTableQuery(table *registers.Table) *registers.Query {
 		fields = append(fields, query)
 	}
 
-	return registers.NewQuery(fmt.Sprintf("CREATE TABLE %s (%s\n);", table.Name, strings.Join(fields, ",")))
+	return registers.NewQuery(fmt.Sprintf("CREATE TABLE %s (%s\n);", table.TableName, strings.Join(fields, ",")))
 }
 func parseCreateEnumQuery(enum *registers.Enum) *registers.Query {
 	values := enum.Values()

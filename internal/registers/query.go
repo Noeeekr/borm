@@ -46,7 +46,6 @@ func (q *Query) ThrowErrorOnFound() *Query {
 	q.throwErrorOnFound = true
 	return q
 }
-
 func (q *Query) SetError(e *common.Error) *Query {
 	q.Error = e
 	return q
@@ -112,7 +111,6 @@ func (q *Query) Set(field TableColumnName, value any) *Query {
 	q.CurrentValues = append(q.CurrentValues, value)
 	return q
 }
-
 func (q *Query) Where(fieldName TableColumnName, fieldValue any) *Query {
 	if q.Error != nil {
 		return q
@@ -138,27 +136,42 @@ func (q *Query) Where(fieldName TableColumnName, fieldValue any) *Query {
 	q.CurrentValues = append(q.CurrentValues, fieldValue)
 	return q
 }
+func (q *Query) Returning(fields ...TableColumnName) *Query {
+	if q.Error != nil {
+		return q
+	}
+	if q.typ == SELECT {
+		q.Error = common.NewError("Must be INSERT | UPDATE | DELETE").Status(common.ErrInvalidMethodChain)
+		return q
+	}
+	columnsNames, err := q.findFieldsByName(fields...)
+	if err != nil {
+		q.Error = err
+		return q
+	}
+	q.Query += fmt.Sprintf("RETURNING %s", strings.Join(columnsNames, ", "))
+	return q
+}
 
 func (q *Query) findFieldsByName(fieldsName ...TableColumnName) ([]string, *common.Error) {
 	var fields []string
 	for _, fieldName := range fieldsName {
 		_, exists := q.Information.Fields[fieldName]
 		if !exists {
-			return nil, common.NewError(fmt.Sprintf("%s does not exist in %s", fieldName, q.Information.Name)).
+			return nil, common.NewError(fmt.Sprintf("%s does not exist in %s", fieldName, q.Information.TableName)).
 				Status(common.ErrNotFound)
 		}
 		fields = append(fields, string(fieldName))
 	}
 	return fields, nil
 }
-
 func newQueryOnTable(t *Table) *Query {
 	var q Query
 	if t == nil {
 		q.Error = common.NewError("Cannot query nil table").Status(common.ErrEmpty)
 		return &q
 	}
-	table := (*t.cache)[t.Name]
+	table := (*t.cache)[t.TableName]
 	if table.Error != nil {
 		return q.SetError(table.Error)
 	}

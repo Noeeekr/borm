@@ -1,12 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
-	"database/sql"
-
 	"github.com/Noeeekr/borm"
+	"github.com/Noeeekr/borm/common"
+	"github.com/Noeeekr/borm/internal/registers"
 )
 
 type Users struct {
@@ -21,9 +22,14 @@ type Users struct {
 	CreatedAt time.Time `borm:"(NAME, created_at)"`
 }
 type Notifications struct {
-	id         int `borm:"(NAME, pip) (FOREIGN KEY, USERS, ID)"`
-	issuerId   int `borm:"(NAME, issuer_id)"`
-	targetUser int `borm:"(NAME, target_user) (FOREIGN KEY, USERS, ID)"`
+	Id          int `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
+	IssuerId    int `borm:"(NAME, issuer_id) (FOREIGN KEY, USERS, ID)"`
+	Title       string
+	Description string
+}
+type UsersNotifications struct {
+	UserId         int `borm:"(NAME, user_id) (FOREIGN KEY, USERS, ID)"`
+	NotificationId int `borm:"(NAME, notification_id) (FOREIGN KEY, NOTIFICATIONS, ID)"`
 }
 
 func main() {
@@ -68,23 +74,12 @@ func main() {
 		database.Migrate.Relations()
 	*/
 
-	db, e := sql.Open("postgres", "postgres://postgres:noeeekr@db/postgres?sslmode=disable")
-	if e != nil {
-		fmt.Println(e.Error())
-		return
-	}
-	e = db.Ping()
-	if e != nil {
-		fmt.Println(e.Error())
-		return
-	}
-	defer db.Close()
 	postgres, err := borm.On("postgres", "noeeekr", "db", "postgres")
 	if err != nil {
 		fmt.Println(err)
 	}
 	// Create new database environments
-	DEVELOPMENT_USER := postgres.User("DEVELOPER", "developer")
+	DEVELOPMENT_USER := postgres.Register.User("DEVELOPER", "developer")
 	DEVELOPMENT_DATABASE := postgres.NewDatabase("DEVELOPMENT", DEVELOPMENT_USER)
 	CONFIGURATION := borm.NewConfiguration().RecreateExisting().UndoOnError()
 	development, err := postgres.Environment(DEVELOPMENT_DATABASE, CONFIGURATION)
@@ -95,51 +90,79 @@ func main() {
 	defer development.DB().Close()
 
 	// Create new database relations
-	LEVEL := development.Enum("LEVEL", "JUNIOR", "PLENO", "SENIOR")
-	TABLE_USERS := development.Table(Users{}).NeedRoles(LEVEL)
-	TABLE_NOTIFICATIONS := development.Table(Notifications{}).NeedTables(TABLE_USERS)
-
-	DEVELOPMENT_USER.GrantPrivileges(TABLE_USERS, borm.ALL)
+	LEVEL := development.Register.Enum("LEVEL", "JUNIOR", "PLENO", "SENIOR")
+	TABLE_USERS := development.Register.Table(Users{}).NeedRoles(LEVEL)
+	TABLE_NOTIFICATIONS := development.Register.Table(Notifications{}).NeedTables(TABLE_USERS)
+	TABLE_USERS_NOTIFICATIONS := development.Register.Table(UsersNotifications{}).Name("users_notifications").NeedTables(TABLE_USERS, TABLE_NOTIFICATIONS)
+	// DEVELOPMENT_USER.GrantPrivileges(TABLE_USERS, borm.ALL)
 
 	err = development.Relations(CONFIGURATION)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(
-		"database name and owner:", DEVELOPMENT_DATABASE.Name, DEVELOPMENT_DATABASE.Owner,
+
+	transaction, err := development.Start()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	var issuerId int
+	err = transaction.Do(TABLE_USERS.
+		Insert("email", "password", "name").
+		Values("noeeekr@gmail.com", "noeeekr", "noeeekr").
+		Returning("id").Scanner(scanInt(&issuerId)),
 	)
-	fmt.Println(
-		TABLE_USERS.
-			Select("id", "email", "name").
-			Where("email", "noeeekr@gmail.com").Where("id", 10).
-			Query,
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	var targetId int
+	err = transaction.Do(TABLE_USERS.
+		Insert("email", "password", "name").
+		Values("cardozoandre0101@gmail.com", "andre", "andre").
+		Returning("id").Scanner(scanInt(&targetId)),
 	)
-	fmt.Println(
-		TABLE_USERS.
-			Insert(TABLE_USERS, "id", "email", "name").
-			Values(100, "100", "100").
-			Query,
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	var notificationId int
+	err = transaction.Do(TABLE_NOTIFICATIONS.
+		Insert("issuer_id", "title", "description").
+		Values(issuerId, "test notification title", "test notification description").
+		Returning("id").Scanner(scanInt(&notificationId)),
 	)
-	fmt.Println(
-		TABLE_NOTIFICATIONS.
-			Delete().
-			Where("pip", 10).
-			Query,
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = transaction.Do(TABLE_USERS_NOTIFICATIONS.
+		Insert("user_id", "notification_id").
+		Values(targetId, notificationId),
 	)
-	fmt.Println(
-		TABLE_NOTIFICATIONS.
-			Update().
-			Where("pip", 10).
-			Set("pip", 999).
-			Query,
-	)
-	fmt.Println(
-		TABLE_USERS.
-			Update().
-			Where("id", 10011).
-			Set("id", 100).
-			Set("name", "peter").
-			Query,
-	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = transaction.Commit()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+}
+
+func scanInt(i *int) registers.QueryRowsScanner {
+	return func(rows *sql.Rows, throwErrorOnFound bool) *common.Error {
+		for rows.Next() {
+			if err := rows.Scan(i); err != nil {
+				return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+			}
+		}
+		err := rows.Close()
+		if err != nil {
+			return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+		}
+		return nil
+	}
 }

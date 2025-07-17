@@ -6,16 +6,17 @@ import (
 
 	"github.com/Noeeekr/borm/common"
 	"github.com/Noeeekr/borm/internal/registers"
+	"github.com/Noeeekr/borm/internal/transaction"
 )
 
 type DatabaseManager struct {
 	host string
 	db   *sql.DB
-
 	// Stores the created stuff
 	cache map[string]bool
 
-	*registers.Database
+	*transaction.Manager
+	Register *registers.Database
 }
 
 func Connect(user, password, host, database string) (*DatabaseManager, *common.Error) {
@@ -32,8 +33,9 @@ func New(name registers.DatabaseName, user *registers.User, db *sql.DB, host str
 	return &DatabaseManager{
 		host:     host,
 		db:       db,
-		Database: registers.NewDatabase(name, user),
+		Register: registers.NewDatabase(name, user),
 		cache:    map[string]bool{},
+		Manager:  transaction.NewManager(db),
 	}
 }
 func (m *DatabaseManager) DB() *sql.DB {

@@ -23,9 +23,9 @@ type TableName string
 type TableCache map[TableName]*Table
 type TablePrivilege int
 type Table struct {
-	Name   TableName
-	Fields map[TableColumnName]*TableColumns
-	Error  *common.Error
+	TableName TableName
+	Fields    map[TableColumnName]*TableColumns
+	Error     *common.Error
 
 	RequiredRoles  []RoleMethods
 	RequiredTables []*Table
@@ -62,8 +62,9 @@ func (m *TableCache) Table(v any) *Table {
 	}
 
 	information := &Table{
-		Name:   TableName(tableName),
-		Fields: map[TableColumnName]*TableColumns{},
+		TableName: TableName(tableName),
+		Fields:    map[TableColumnName]*TableColumns{},
+		cache:     m,
 	}
 
 	tagParser := NewFieldTagParser()
@@ -74,16 +75,21 @@ func (m *TableCache) Table(v any) *Table {
 		fieldInformation.Type = parseFieldType(field.Type.Name())
 		tableField := tagParser.Override(fieldInformation).ParseRaw(string(field.Tag.Get("borm")))
 		information.Fields[tableField.Name] = tableField
-		information.cache = m
 	}
 
 	(*m)[tableName] = information
 
 	return information
 }
+func (t *Table) Name(n string) *Table {
+	delete(*t.cache, t.TableName)
+	t.TableName = TableName(n)
+	(*t.cache)[t.TableName] = t
+	return t
+}
 func (t *Table) NeedTables(dependencies ...*Table) *Table {
 	for _, dependency := range dependencies {
-		if _, ok := (*t.cache)[dependency.Name]; !ok {
+		if _, ok := (*t.cache)[dependency.TableName]; !ok {
 			t.Error = common.NewError("Table is not registered. Unable to use it as a dependency.").
 				Status(common.ErrNotFound)
 			return t
@@ -99,7 +105,7 @@ func (t *Table) NeedRoles(dependencies ...RoleMethods) *Table {
 
 func (m *Table) Update() *Query {
 	q := newQueryOnTable(m)
-	q.Query += fmt.Sprintf("UPDATE %s ", m.Name)
+	q.Query += fmt.Sprintf("UPDATE %s ", m.TableName)
 	q.typ = UPDATE
 	return q
 }
@@ -114,11 +120,11 @@ func (m *Table) Select(fieldsName ...TableColumnName) *Query {
 		return q
 	}
 	q.typ = SELECT
-	q.Query = fmt.Sprintf("SELECT %s FROM %s ", strings.Join(fields, ", "), q.Information.Name)
+	q.Query = fmt.Sprintf("SELECT %s FROM %s ", strings.Join(fields, ", "), q.Information.TableName)
 	return q
 }
 
-func (m *Table) Insert(table *Table, fieldsName ...TableColumnName) *Query {
+func (m *Table) Insert(fieldsName ...TableColumnName) *Query {
 	q := newQueryOnTable(m)
 	if q.Error != nil {
 		return q
@@ -130,7 +136,7 @@ func (m *Table) Insert(table *Table, fieldsName ...TableColumnName) *Query {
 	}
 	q.typ = INSERT
 	q.requiredValueLength = len(fieldsName)
-	q.Query = fmt.Sprintf("INSERT INTO %s (%s) ", q.Information.Name, strings.Join(fields, ", "))
+	q.Query = fmt.Sprintf("INSERT INTO %s (%s) ", q.Information.TableName, strings.Join(fields, ", "))
 	return q
 }
 func (m *Table) Delete() *Query {
@@ -139,7 +145,7 @@ func (m *Table) Delete() *Query {
 		return q
 	}
 	q.typ = DELETE
-	q.Query += fmt.Sprintf("DELETE FROM %s ", q.Information.Name)
+	q.Query += fmt.Sprintf("DELETE FROM %s ", q.Information.TableName)
 	return q
 }
 func parseFieldType(typname string) string {

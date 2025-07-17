@@ -33,14 +33,17 @@ func NewTransaction(tx *sql.Tx) *Transaction {
 	}
 }
 
-func (t *Transaction) Query(query *registers.Query) (*Transaction, *common.Error) {
+func (t *Transaction) Do(query *registers.Query) *common.Error {
 	if query == nil {
-		return t, common.NewError("Invalid query. Empty query.").Status(common.ErrSyntax)
+		return common.NewError("Failed transaction").Append("Unable to proceed, cannot use empty queries").Status(common.ErrSyntax)
+	}
+	if query.Error != nil {
+		return query.Error
 	}
 
 	stmt, err := t.tx.Prepare(query.Query)
 	if err != nil {
-		return t, common.NewError(err.Error()).Status(common.ErrSyntax)
+		return common.NewError(err.Error()).Status(common.ErrSyntax)
 	}
 
 	if query.RowsScanner != nil {
@@ -49,38 +52,38 @@ func (t *Transaction) Query(query *registers.Query) (*Transaction, *common.Error
 	return t.exec(stmt, query.CurrentValues...)
 }
 
-func (t *Transaction) Commit() (*Transaction, *common.Error) {
+func (t *Transaction) Commit() *common.Error {
 	if err := t.tx.Commit(); err != nil {
-		return t, common.NewError("Transaction Failed: " + err.Error()).Status(common.ErrFailedTransactionCommit)
+		return common.NewError(err.Error()).Status(common.ErrFailedTransactionCommit)
 	}
 
-	return t, nil
+	return nil
 }
 
-func (t *Transaction) query(stmt *sql.Stmt, query *registers.Query) (*Transaction, *common.Error) {
+func (t *Transaction) query(stmt *sql.Stmt, query *registers.Query) *common.Error {
 	rows, err := stmt.Query(query.CurrentValues...)
 	if err != nil {
-		return nil, common.NewError(err.Error()).Join(t.rollback()).Status(common.ErrFailedTransaction)
+		return common.NewError(err.Error()).Join(t.rollback()).Status(common.ErrFailedTransaction)
 	}
 
 	if err := query.Scan(rows); t != nil {
-		return t, err
+		return err
 	}
 
-	return t, nil
+	return nil
 }
 
-func (t *Transaction) exec(stmt *sql.Stmt, args ...any) (*Transaction, *common.Error) {
+func (t *Transaction) exec(stmt *sql.Stmt, args ...any) *common.Error {
 	_, err := stmt.Exec(args...)
 	if err != nil {
-		return t, common.NewError("Transaction failed").Append(err.Error()).Join(t.rollback()).Status(common.ErrFailedTransaction)
+		return common.NewError("Transaction failed").Append(err.Error()).Join(t.rollback()).Status(common.ErrFailedTransaction)
 	}
-	return t, nil
+	return nil
 }
 
 func (t *Transaction) rollback() *common.Error {
 	if err := t.tx.Rollback(); err != nil {
-		return common.NewError("Unable to rollback. " + err.Error())
+		return common.NewError("Failed rollback. ").Append(err.Error())
 	}
 	return nil
 }
