@@ -4,25 +4,30 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Noeeekr/borm/common"
+	"github.com/Noeeekr/borm/configuration"
+	"github.com/Noeeekr/borm/errors"
 	"github.com/Noeeekr/borm/internal/registers"
 	"github.com/Noeeekr/borm/internal/transaction"
 )
 
-func (m *DatabaseManager) Relations(configuration *Configuration) *common.Error {
+// returns nil if migrations are not enabled in settings
+func (m *DatabaseManager) Relations() *errors.Error {
+	if !configuration.Settings().Migrations().Enabled {
+		return nil
+	}
 	manager := transaction.NewManager(m.db)
 	t, err := manager.Start()
 	if err != nil {
 		return err
 	}
 
-	if err := m.migrateTables(t, configuration); err != nil {
-		return common.NewError("Unable to migrate tables").Join(err).Status(common.ErrFailedTransaction)
+	if err := m.migrateTables(t); err != nil {
+		return errors.New("Unable to migrate tables").Join(err).Status(errors.ErrFailedTransaction)
 	}
 
 	return t.Commit()
 }
-func (m *DatabaseManager) validateTables() *common.Error {
+func (m *DatabaseManager) validateTables() *errors.Error {
 	for _, table := range *m.Register.TableCache {
 		if table.Error != nil {
 			return table.Error
@@ -30,20 +35,20 @@ func (m *DatabaseManager) validateTables() *common.Error {
 	}
 	return nil
 }
-func (m *DatabaseManager) migrateTables(t *transaction.Transaction, configuration *Configuration) *common.Error {
+func (m *DatabaseManager) migrateTables(t *transaction.Transaction) *errors.Error {
 	if err := m.validateTables(); err != nil {
 		return err
 	}
 
 	for _, table := range *m.Register.TableCache {
-		if err := m.migrateTable(t, table, configuration); err != nil {
+		if err := m.migrateTable(t, table); err != nil {
 			return err
 		}
 	}
 
 	return nil
 }
-func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *registers.Table, configuration *Configuration) *common.Error {
+func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *registers.Table) *errors.Error {
 	var exists bool
 	existsQuery := registers.NewQuery("SELECT tablename FROM pg_catalog.pg_tables WHERE tablename = $1").
 		Scanner(transaction.CheckExist(&exists))
@@ -52,10 +57,11 @@ func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *regist
 	if err != nil {
 		return err
 	}
-	if exists && configuration.ignoreExisting {
+	configuration := configuration.Settings().Migrations()
+	if exists && configuration.Ignore {
 		return nil
 	}
-	if exists && configuration.reacreateExisting {
+	if exists && configuration.Recreate {
 		if err = m.dropTable(t, table); err != nil {
 			return err
 		}
@@ -68,7 +74,7 @@ func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *regist
 
 		if role.RoleType() == registers.ENUM {
 			enum := role.(*registers.Enum)
-			err = m.migrateEnum(t, enum, configuration)
+			err = m.migrateEnum(t, enum)
 		}
 		// error separated since the if above can become a switch with many role types
 		if err != nil {
@@ -83,7 +89,7 @@ func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *regist
 			continue
 		}
 
-		err = m.migrateTable(t, subtable, configuration)
+		err = m.migrateTable(t, subtable)
 		if err != nil {
 			return err
 		}
@@ -96,17 +102,18 @@ func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *regist
 	query := parseCreateTableQuery(table)
 	return t.Do(query)
 }
-func (m *DatabaseManager) migrateEnum(t *transaction.Transaction, enum *registers.Enum, configuration *Configuration) *common.Error {
+func (m *DatabaseManager) migrateEnum(t *transaction.Transaction, enum *registers.Enum) *errors.Error {
 	var exists bool
 	registers.
 		NewQuery("SELECT typtype FROM pg_catalog.pg_type WHERE typtype = 'e' AND typname = $1").
 		Values(enum.Name).
 		Scanner(transaction.CheckExist(&exists))
 
-	if exists && configuration.ignoreExisting {
+	configuration := configuration.Settings().Migrations()
+	if exists && configuration.Ignore {
 		return nil
 	}
-	if exists && configuration.reacreateExisting {
+	if exists && configuration.Recreate {
 		err := m.dropEnum(t, enum)
 		if err != nil {
 			return err
@@ -114,12 +121,12 @@ func (m *DatabaseManager) migrateEnum(t *transaction.Transaction, enum *register
 	}
 	return t.Do(parseCreateEnumQuery(enum))
 }
-func (m *DatabaseManager) dropEnum(t *transaction.Transaction, enum *registers.Enum) *common.Error {
+func (m *DatabaseManager) dropEnum(t *transaction.Transaction, enum *registers.Enum) *errors.Error {
 	query := registers.NewQuery("DROP TYPE $1;")
 	query.CurrentValues = append(query.CurrentValues, enum.Name)
 	return t.Do(query)
 }
-func (m *DatabaseManager) dropTable(t *transaction.Transaction, table *registers.Table) *common.Error {
+func (m *DatabaseManager) dropTable(t *transaction.Transaction, table *registers.Table) *errors.Error {
 	query := registers.NewQuery("DROP TABLE $1 CASCADE;")
 	query.CurrentValues = append(query.CurrentValues, table.Name)
 

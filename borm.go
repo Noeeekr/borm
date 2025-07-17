@@ -3,14 +3,16 @@ package borm
 import (
 	_ "github.com/lib/pq"
 
-	"github.com/Noeeekr/borm/common"
+	"github.com/Noeeekr/borm/configuration"
+	"github.com/Noeeekr/borm/errors"
 	"github.com/Noeeekr/borm/internal/manager"
+	"github.com/Noeeekr/borm/internal/registers"
 )
 
-func On(user, password, host, db string) (*manager.DatabaseManager, *common.Error) {
-	return manager.Connect(user, password, host, db)
+func Settings() *configuration.Configuration {
+	return configuration.Settings()
 }
 
-func NewConfiguration() *manager.Configuration {
-	return manager.NewConfiguration()
+func Connect(user string, password string, host string, database registers.DatabaseName) (*manager.DatabaseManager, *errors.Error) {
+	return manager.Connect(registers.NewUser(user, password), host, database)
 }

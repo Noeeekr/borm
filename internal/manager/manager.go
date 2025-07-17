@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/Noeeekr/borm/common"
+	"github.com/Noeeekr/borm/errors"
 	"github.com/Noeeekr/borm/internal/registers"
 	"github.com/Noeeekr/borm/internal/transaction"
 )
@@ -19,16 +19,17 @@ type DatabaseManager struct {
 	Register *registers.Database
 }
 
-func Connect(user, password, host, database string) (*DatabaseManager, *common.Error) {
-	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", user, password, host, database))
+func Connect(user *registers.User, host string, database registers.DatabaseName) (*DatabaseManager, *errors.Error) {
+	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", user.Name, user.Password(), host, database))
 	if err != nil {
-		return nil, common.NewError(err.Error()).Status(common.ErrBadConnection)
+		return nil, errors.New(err.Error()).Status(errors.ErrBadConnection)
 	}
 	if err := db.Ping(); err != nil {
-		return nil, common.NewError("Unable to ping database").Append(err.Error()).Status(common.ErrBadConnection)
+		return nil, errors.New("Unable to ping database").Append(err.Error()).Status(errors.ErrBadConnection)
 	}
-	return New(registers.DatabaseName(database), registers.NewUser(user, password), db, host), nil
+	return New(registers.DatabaseName(database), user, db, host), nil
 }
+
 func New(name registers.DatabaseName, user *registers.User, db *sql.DB, host string) *DatabaseManager {
 	return &DatabaseManager{
 		host:     host,

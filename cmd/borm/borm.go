@@ -3,10 +3,11 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/Noeeekr/borm"
-	"github.com/Noeeekr/borm/common"
+	"github.com/Noeeekr/borm/errors"
 	"github.com/Noeeekr/borm/internal/registers"
 )
 
@@ -14,7 +15,7 @@ type Users struct {
 	Id int `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
 
 	Name     string `borm:"(CONSTRAINTS, NOT NULL)"`
-	Email    string `borm:"(CONSTRAINTS, NOT NULL)"`
+	Email    string `borm:"(CONSTRAINTS, NOT NULL, UNIQUE)"`
 	Password string `borm:"(CONSTRAINTS, NOT NULL)"`
 
 	DeletedAt time.Time `borm:"(NAME, deleted_at)"`
@@ -33,60 +34,24 @@ type UsersNotifications struct {
 }
 
 func main() {
+	for _, arg := range os.Args {
+		switch arg {
+		case "--debug":
+			borm.Settings().Environment().SetEnvironment(borm.DEBUGGING)
+		case "--migrate":
+			borm.Settings().Migrations().Enable().RecreateExisting().UndoOnError()
+		}
+	}
 
-	/*
-		execution order:
-			ENVIRONMENT
-				- users
-					- with password
-					- with database
-				- databases (using users)
-					- owner user
-			RELATIONS
-				- roles (using databases and users)
-				- tables (using databases and users)
-					- privileged users
-				- queries (using databases and users)
-
-		database := borm.NewDatabase(*sql.DB)
-		pipolo := database.User("piplo")
-		pipole := database.User("piple")
-
-		pizzas := database.Enum("pizzas", "chocolate", "cheese")
-
-		INSTITUTIONS_TABLE := database.
-		Table(Institutions{})
-
-		USERS_TABLE := database.
-			Table(Users{}).                           (Needed for queries)
-			NeedTables(Institutions{})
-
-		NOTIFICATIONS_TABLE := database.
-			Table(Notifications{}).
-			NeedTables(Users{}, Institutions{}).          (2 out of 3 already in cache)
-			NeedRoles(piple, piplo, pizzas)
-
-		pipolo.
-			GrantPrivileges(USERS_TABLE).				 (If privilege list empty all privileges)
-			ToColumns()        							 (If column list empty all columns)
-
-		database.Migrate.Environment()
-		database.Migrate.Relations()
-	*/
-
-	postgres, err := borm.On("postgres", "noeeekr", "db", "postgres")
+	postgres, err := borm.Connect("postgres", "noeeekr", "db", "postgres")
 	if err != nil {
 		fmt.Println(err)
 	}
 	// Create new database environments
 	DEVELOPMENT_USER := postgres.Register.User("DEVELOPER", "developer")
 	DEVELOPMENT_DATABASE := postgres.NewDatabase("DEVELOPMENT", DEVELOPMENT_USER)
-	CONFIGURATION := borm.NewConfiguration().RecreateExisting().UndoOnError()
-	development, err := postgres.Environment(DEVELOPMENT_DATABASE, CONFIGURATION)
-	if err != nil {
-		fmt.Println(err.String())
-		return
-	}
+	development, err := postgres.Environment(DEVELOPMENT_DATABASE)
+
 	defer development.DB().Close()
 
 	// Create new database relations
@@ -96,7 +61,7 @@ func main() {
 	TABLE_USERS_NOTIFICATIONS := development.Register.Table(UsersNotifications{}).Name("users_notifications").NeedTables(TABLE_USERS, TABLE_NOTIFICATIONS)
 	// DEVELOPMENT_USER.GrantPrivileges(TABLE_USERS, borm.ALL)
 
-	err = development.Relations(CONFIGURATION)
+	err = development.Relations()
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -153,15 +118,15 @@ func main() {
 }
 
 func scanInt(i *int) registers.QueryRowsScanner {
-	return func(rows *sql.Rows, throwErrorOnFound bool) *common.Error {
+	return func(rows *sql.Rows, throwErrorOnFound bool) *errors.Error {
 		for rows.Next() {
 			if err := rows.Scan(i); err != nil {
-				return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+				return errors.New(err.Error()).Status(errors.ErrFailedOperation)
 			}
 		}
 		err := rows.Close()
 		if err != nil {
-			return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+			return errors.New(err.Error()).Status(errors.ErrFailedOperation)
 		}
 		return nil
 	}

@@ -1,8 +1,10 @@
-package common
+package errors
 
 import (
 	"fmt"
 	"runtime/debug"
+
+	"github.com/Noeeekr/borm/configuration"
 )
 
 type Error struct {
@@ -29,9 +31,9 @@ const (
 	ErrBadConnection             ErrorStatus = "Bad connection"
 )
 
-func NewError(description string) *Error {
+func New(description string) *Error {
 	var debugStack string
-	if Environment() == DEBUGGING {
+	if configuration.Settings().Environment().GetEnvironment() == configuration.DEBUGGING {
 		debugStack += "\n\n[Debugging Stack]: \n\n" + string(debug.Stack())
 	}
 	return &Error{

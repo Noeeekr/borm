@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Noeeekr/borm/common"
+	"github.com/Noeeekr/borm/errors"
 )
 
-type QueryRowsScanner func(rows *sql.Rows, throwErrorOnFound bool) *common.Error
+type QueryRowsScanner func(rows *sql.Rows, throwErrorOnFound bool) *errors.Error
 
 type Query struct {
 	typ                 TablePrivilege
@@ -21,7 +21,7 @@ type Query struct {
 
 	Query       string
 	Information *Table
-	Error       *common.Error
+	Error       *errors.Error
 
 	RowsScanner       QueryRowsScanner
 	throwErrorOnFound bool
@@ -31,7 +31,7 @@ type Query struct {
 func NewQuery(q string) *Query {
 	return &Query{Query: q}
 }
-func (q *Query) Scan(rows *sql.Rows) *common.Error {
+func (q *Query) Scan(rows *sql.Rows) *errors.Error {
 	return q.RowsScanner(rows, q.throwErrorOnFound)
 }
 
@@ -46,7 +46,7 @@ func (q *Query) ThrowErrorOnFound() *Query {
 	q.throwErrorOnFound = true
 	return q
 }
-func (q *Query) SetError(e *common.Error) *Query {
+func (q *Query) SetError(e *errors.Error) *Query {
 	q.Error = e
 	return q
 }
@@ -55,18 +55,18 @@ func (q *Query) Values(values ...any) *Query {
 		return q
 	}
 	if q.typ == SELECT || q.typ == DELETE {
-		q.Error = common.NewError("Must be INSERT | UPDATE ").Status(common.ErrInvalidMethodChain)
+		q.Error = errors.New("Must be INSERT | UPDATE ").Status(errors.ErrInvalidMethodChain)
 		return q
 	}
 	var valueAmount = len(values)
 	if valueAmount == 0 {
-		q.Error = common.NewError("Cannot use empty values").Status(common.ErrEmpty)
+		q.Error = errors.New("Cannot use empty values").Status(errors.ErrEmpty)
 		return q
 	}
 	if valueAmount%q.requiredValueLength != 0 {
-		q.Error = common.NewError("Invalid value amount").
+		q.Error = errors.New("Invalid value amount").
 			Append(fmt.Sprintf("Wanted: multiple of %d. Recieved: %d", q.requiredValueLength, valueAmount)).
-			Status(common.ErrSyntax)
+			Status(errors.ErrSyntax)
 		return q
 	}
 
@@ -91,7 +91,7 @@ func (q *Query) Set(field TableColumnName, value any) *Query {
 		return q
 	}
 	if q.typ != UPDATE {
-		q.Error = common.NewError("Must be INSERT or UPDATE").Status(common.ErrInvalidMethodChain)
+		q.Error = errors.New("Must be INSERT or UPDATE").Status(errors.ErrInvalidMethodChain)
 		return q
 	}
 	if _, err := q.findFieldsByName(field); err != nil {
@@ -116,7 +116,7 @@ func (q *Query) Where(fieldName TableColumnName, fieldValue any) *Query {
 		return q
 	}
 	if q.typ == INSERT {
-		q.Error = common.NewError("Must be INSERT | UPDATE | DELETE").Status(common.ErrInvalidMethodChain)
+		q.Error = errors.New("Must be INSERT | UPDATE | DELETE").Status(errors.ErrInvalidMethodChain)
 		return q
 	}
 	if _, err := q.findFieldsByName(fieldName); err != nil {
@@ -141,7 +141,7 @@ func (q *Query) Returning(fields ...TableColumnName) *Query {
 		return q
 	}
 	if q.typ == SELECT {
-		q.Error = common.NewError("Must be INSERT | UPDATE | DELETE").Status(common.ErrInvalidMethodChain)
+		q.Error = errors.New("Must be INSERT | UPDATE | DELETE").Status(errors.ErrInvalidMethodChain)
 		return q
 	}
 	columnsNames, err := q.findFieldsByName(fields...)
@@ -153,13 +153,13 @@ func (q *Query) Returning(fields ...TableColumnName) *Query {
 	return q
 }
 
-func (q *Query) findFieldsByName(fieldsName ...TableColumnName) ([]string, *common.Error) {
+func (q *Query) findFieldsByName(fieldsName ...TableColumnName) ([]string, *errors.Error) {
 	var fields []string
 	for _, fieldName := range fieldsName {
 		_, exists := q.Information.Fields[fieldName]
 		if !exists {
-			return nil, common.NewError(fmt.Sprintf("%s does not exist in %s", fieldName, q.Information.TableName)).
-				Status(common.ErrNotFound)
+			return nil, errors.New(fmt.Sprintf("%s does not exist in %s", fieldName, q.Information.TableName)).
+				Status(errors.ErrNotFound)
 		}
 		fields = append(fields, string(fieldName))
 	}
@@ -168,7 +168,7 @@ func (q *Query) findFieldsByName(fieldsName ...TableColumnName) ([]string, *comm
 func newQueryOnTable(t *Table) *Query {
 	var q Query
 	if t == nil {
-		q.Error = common.NewError("Cannot query nil table").Status(common.ErrEmpty)
+		q.Error = errors.New("Cannot query nil table").Status(errors.ErrEmpty)
 		return &q
 	}
 	table := (*t.cache)[t.TableName]

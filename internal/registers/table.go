@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Noeeekr/borm/common"
+	"github.com/Noeeekr/borm/errors"
 )
 
 const (
@@ -25,7 +26,7 @@ type TablePrivilege int
 type Table struct {
 	TableName TableName
 	Fields    map[TableColumnName]*TableColumns
-	Error     *common.Error
+	Error     *errors.Error
 
 	RequiredRoles  []RoleMethods
 	RequiredTables []*Table
@@ -90,8 +91,8 @@ func (t *Table) Name(n string) *Table {
 func (t *Table) NeedTables(dependencies ...*Table) *Table {
 	for _, dependency := range dependencies {
 		if _, ok := (*t.cache)[dependency.TableName]; !ok {
-			t.Error = common.NewError("Table is not registered. Unable to use it as a dependency.").
-				Status(common.ErrNotFound)
+			t.Error = errors.New("Table is not registered. Unable to use it as a dependency.").
+				Status(errors.ErrNotFound)
 			return t
 		}
 	}

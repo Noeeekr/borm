@@ -1,10 +1,14 @@
 package common
 
-import "reflect"
+import (
+	"reflect"
 
-func IsStruct(t reflect.Type) *Error {
+	"github.com/Noeeekr/borm/errors"
+)
+
+func IsStruct(t reflect.Type) *errors.Error {
 	if t.Kind() != reflect.TypeFor[struct{}]().Kind() {
-		return NewError(t.Name() + " must be of kind struct").Status(ErrInvalidType)
+		return errors.New(t.Name() + " must be of kind struct").Status(errors.ErrInvalidType)
 	}
 	return nil
 }

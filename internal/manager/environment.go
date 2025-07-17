@@ -3,13 +3,15 @@ package manager
 import (
 	"fmt"
 
-	"github.com/Noeeekr/borm/common"
+	"github.com/Noeeekr/borm/configuration"
+	"github.com/Noeeekr/borm/errors"
 	"github.com/Noeeekr/borm/internal/registers"
 )
 
-func (m *DatabaseManager) Environment(database *registers.Database, configuration *Configuration) (*DatabaseManager, *common.Error) {
-	if configuration == nil {
-		configuration = &Configuration{}
+func (m *DatabaseManager) Environment(database *registers.Database) (*DatabaseManager, *errors.Error) {
+	configuration := configuration.Settings().Migrations()
+	if !configuration.Enabled {
+		return Connect(database.Owner, m.host, database.Name)
 	}
 
 	registeredUsers := []*registers.User{}
@@ -20,30 +22,30 @@ func (m *DatabaseManager) Environment(database *registers.Database, configuratio
 		}
 	}
 
-	created, err := m.migrateUsers(configuration, registeredUsers...)
+	created, err := m.migrateUsers(registeredUsers...)
 	if err != nil {
-		if configuration.undoOnError {
+		if configuration.Undo {
 			return nil, err.Join(m.dropDatabaseUsers(created...))
 		}
 		return nil, err
 	}
 
-	err = m.migrateDatabase(configuration, database)
+	err = m.migrateDatabase(database)
 	if err != nil {
-		if configuration.undoOnError {
+		if configuration.Undo {
 			return nil, err.Join(m.dropDatabaseUsers(created...))
 		}
 		return nil, err
 	}
 
-	return Connect(string(database.Owner.Name), database.Owner.Password(), m.host, string(database.Name))
+	return Connect(database.Owner, m.host, database.Name)
 }
 
-func (m *DatabaseManager) migrateUsers(configuration *Configuration, users ...*registers.User) ([]*registers.User, *common.Error) {
+func (m *DatabaseManager) migrateUsers(users ...*registers.User) ([]*registers.User, *errors.Error) {
 	created := []*registers.User{}
 	for _, user := range users {
 		fmt.Println("[Creating database user]:", user.Name)
-		err := m.migrateDatabaseUser(configuration, user)
+		err := m.migrateDatabaseUser(user)
 		if err != nil {
 			return created, err
 		}
@@ -51,22 +53,24 @@ func (m *DatabaseManager) migrateUsers(configuration *Configuration, users ...*r
 	}
 	return created, nil
 }
-func (m *DatabaseManager) migrateDatabaseUser(configuration *Configuration, user *registers.User) *common.Error {
+func (m *DatabaseManager) migrateDatabaseUser(user *registers.User) *errors.Error {
 	rows, err := m.db.Query("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname = $1;", user.Name)
 	if err != nil {
-		return common.NewError("Failure while checking if user exists").Append(err.Error()).Status(common.ErrSyntax)
+		return errors.New("Failure while checking if user exists").Append(err.Error()).Status(errors.ErrSyntax)
 	}
+
+	configuration := configuration.Settings().Migrations()
 
 	var userExists bool
 	if rows.Next() {
-		if configuration.ignoreExisting {
+		if configuration.Ignore {
 			return nil
 		}
 		userExists = true
 	}
 	rows.Close()
 
-	if userExists && configuration.reacreateExisting {
+	if userExists && configuration.Recreate {
 
 		err := m.dropDatabaseUsers(user)
 		if err != nil {
@@ -77,21 +81,24 @@ func (m *DatabaseManager) migrateDatabaseUser(configuration *Configuration, user
 	createUserQuery := parseCreateUserQuery(user)
 	_, err = m.db.Exec(createUserQuery.Query)
 	if err != nil {
-		return common.NewError("Failed creating user").Append(err.Error()).Status(common.ErrFailedOperation)
+		return errors.New("Failed creating user").Append(err.Error()).Status(errors.ErrFailedOperation)
 	}
 	return nil
 }
-func (m *DatabaseManager) migrateDatabase(configuration *Configuration, database *registers.Database) *common.Error {
+func (m *DatabaseManager) migrateDatabase(database *registers.Database) *errors.Error {
 	rows, err := m.db.Query("SELECT datname FROM pg_catalog.pg_database WHERE datname = $1;", database.Name)
 	if err != nil {
-		return common.NewError(err.Error()).Status(common.ErrSyntax)
+		return errors.New(err.Error()).Status(errors.ErrSyntax)
 	}
+
+	configuration := configuration.Settings().Migrations()
+
 	var exists bool = rows.Next()
 	defer rows.Close()
-	if exists && configuration.ignoreExisting {
+	if exists && configuration.Ignore {
 		return nil
 	}
-	if exists && configuration.reacreateExisting {
+	if exists && configuration.Recreate {
 		if err := m.dropDatabase(database); err != nil {
 			return err
 		}
@@ -99,15 +106,15 @@ func (m *DatabaseManager) migrateDatabase(configuration *Configuration, database
 
 	_, err = m.db.Exec(parseCreateDatabaseQuery(database).Query)
 	if err != nil {
-		return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+		return errors.New(err.Error()).Status(errors.ErrFailedOperation)
 	}
 	return nil
 }
-func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Error {
+func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *errors.Error {
 	for _, user := range users {
 		rows, err := m.db.Query("SELECT datname FROM pg_catalog.pg_database d INNER JOIN pg_catalog.pg_roles u ON d.datdba = u.oid WHERE rolname = $1;", user.Name)
 		if err != nil {
-			return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+			return errors.New(err.Error()).Status(errors.ErrFailedOperation)
 		}
 
 		var datnames []string
@@ -115,7 +122,7 @@ func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Er
 			var datname string
 			err := rows.Scan(&datname)
 			if err != nil {
-				return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+				return errors.New(err.Error()).Status(errors.ErrFailedOperation)
 			}
 			datnames = append(datnames, datname)
 		}
@@ -124,22 +131,22 @@ func (m *DatabaseManager) dropDatabaseUsers(users ...*registers.User) *common.Er
 		for _, datname := range datnames {
 			_, err := m.db.Exec("DROP DATABASE " + datname)
 			if err != nil {
-				return common.NewError("Failure while dropping database").Append(err.Error()).Status(common.ErrFailedOperation)
+				return errors.New("Failure while dropping database").Append(err.Error()).Status(errors.ErrFailedOperation)
 			}
 		}
 
 		dropUserQuery := parseDropUserQuery(user)
 		_, err = m.db.Exec(dropUserQuery.Query)
 		if err != nil {
-			return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+			return errors.New(err.Error()).Status(errors.ErrFailedOperation)
 		}
 	}
 	return nil
 }
-func (m *DatabaseManager) dropDatabase(database *registers.Database) *common.Error {
+func (m *DatabaseManager) dropDatabase(database *registers.Database) *errors.Error {
 	_, err := m.db.Exec(fmt.Sprintf("DROP DATABASE %s;", database.Name))
 	if err != nil {
-		return common.NewError(err.Error()).Status(common.ErrFailedOperation)
+		return errors.New(err.Error()).Status(errors.ErrFailedOperation)
 	}
 	return nil
 }
