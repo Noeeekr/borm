@@ -2,6 +2,7 @@ package registers
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 	"time"
@@ -63,21 +64,10 @@ func (m *TableCache) Table(v any) *Table {
 	}
 
 	information := &Table{
-		TableName: TableName(tableName),
-		Fields:    map[TableColumnName]*TableColumns{},
+		TableName: TableName(strings.ToLower(typ.Name())),
+		Fields:    parseFields(typ),
 		cache:     m,
 	}
-
-	tagParser := NewFieldTagParser()
-	for i := range typ.NumField() {
-		field := typ.Field(i)
-		fieldInformation := &TableColumns{}
-		fieldInformation.Name = TableColumnName(strings.ToLower(field.Name))
-		fieldInformation.Type = parseFieldType(field.Type.Name())
-		tableField := tagParser.Override(fieldInformation).ParseRaw(string(field.Tag.Get("borm")))
-		information.Fields[tableField.Name] = tableField
-	}
-
 	(*m)[tableName] = information
 
 	return information
@@ -160,4 +150,23 @@ func parseFieldType(typname string) string {
 	default:
 		return typname
 	}
+}
+func parseFields(typ reflect.Type) map[TableColumnName]*TableColumns {
+	fields := map[TableColumnName]*TableColumns{}
+
+	tagParser := NewFieldTagParser()
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			subfields := parseFields(field.Type)
+			maps.Copy(fields, subfields)
+			continue
+		}
+		fieldInformation := &TableColumns{}
+		fieldInformation.Name = TableColumnName(strings.ToLower(field.Name))
+		fieldInformation.Type = parseFieldType(field.Type.Name())
+		tableField := tagParser.Override(fieldInformation).ParseRaw(string(field.Tag.Get("borm")))
+		fields[tableField.Name] = tableField
+	}
+	return fields
 }

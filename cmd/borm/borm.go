@@ -11,8 +11,11 @@ import (
 	"github.com/Noeeekr/borm/internal/registers"
 )
 
-type Users struct {
+type Id struct {
 	Id int `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
+}
+type Users struct {
+	Id
 
 	Name     string `borm:"(CONSTRAINTS, NOT NULL)"`
 	Email    string `borm:"(CONSTRAINTS, NOT NULL, UNIQUE)"`

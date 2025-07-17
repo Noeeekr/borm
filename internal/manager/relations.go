@@ -100,6 +100,7 @@ func (m *DatabaseManager) migrateTable(t *transaction.Transaction, table *regist
 	m.cache[string(table.TableName)] = true
 
 	query := parseCreateTableQuery(table)
+	fmt.Println(query.Query)
 	return t.Do(query)
 }
 func (m *DatabaseManager) migrateEnum(t *transaction.Transaction, enum *registers.Enum) *errors.Error {
