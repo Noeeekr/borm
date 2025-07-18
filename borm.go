@@ -13,6 +13,6 @@ func Settings() *configuration.Configuration {
 	return configuration.Settings()
 }
 
-func Connect(user string, password string, host string, database registers.DatabaseName) (*manager.DatabaseManager, *errors.Error) {
-	return manager.Connect(registers.NewUser(user, password), host, database)
+func Connect(user string, password string, host string, database string) (*manager.DatabaseManager, *errors.Error) {
+	return manager.Connect(registers.NewUser(user, password), host, registers.DatabaseName(database))
 }
