@@ -148,7 +148,7 @@ func parseFieldType(typname string) string {
 	case reflect.TypeFor[time.Time]().Name():
 		return "TIMESTAMPTZ"
 	default:
-		return typname
+		return strings.ToLower(typname)
 	}
 }
 func parseFields(typ reflect.Type) map[TableColumnName]*TableColumns {

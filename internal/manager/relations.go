@@ -153,7 +153,7 @@ func parseCreateTableQuery(table *registers.Table) *registers.Query {
 func parseCreateEnumQuery(enum *registers.Enum) *registers.Query {
 	values := enum.Values()
 	for i, value := range values {
-		values[i] = fmt.Sprintf("'%s'", strings.ToLower(value))
+		values[i] = fmt.Sprintf("'%s'", value)
 	}
 
 	queryString := fmt.Sprintf("CREATE TYPE %s AS ENUM (%s);", strings.ToLower(string(enum.Name)), strings.Join(values, ", "))

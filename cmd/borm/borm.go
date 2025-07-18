@@ -11,15 +11,24 @@ import (
 	"github.com/Noeeekr/borm/internal/registers"
 )
 
+type UserRole string
+
+const (
+	STUDENT UserRole = "STUDENT"
+	TEACHER UserRole = "TEACHER"
+	ADMIN   UserRole = "ADMIN"
+)
+
 type Id struct {
 	Id int `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
 }
 type Users struct {
 	Id
 
-	Name     string `borm:"(CONSTRAINTS, NOT NULL)"`
-	Email    string `borm:"(CONSTRAINTS, NOT NULL, UNIQUE)"`
-	Password string `borm:"(CONSTRAINTS, NOT NULL)"`
+	Name     string   `borm:"(CONSTRAINTS, NOT NULL)"`
+	Email    string   `borm:"(CONSTRAINTS, NOT NULL, UNIQUE)"`
+	Password string   `borm:"(CONSTRAINTS, NOT NULL)"`
+	Role     UserRole `borm:"(CONSTRAINTS, NOT NULL) (TYPE, user_role)"`
 
 	DeletedAt time.Time `borm:"(NAME, deleted_at)"`
 	UpdatedAt time.Time `borm:"(NAME, updated_at)"`
@@ -58,8 +67,8 @@ func main() {
 	defer development.DB().Close()
 
 	// Create new database relations
-	LEVEL := development.Register.Enum("LEVEL", "JUNIOR", "PLENO", "SENIOR")
-	TABLE_USERS := development.Register.Table(Users{}).NeedRoles(LEVEL)
+	USER_ROLES := development.Register.Enum("user_role", string(STUDENT), string(TEACHER), string(ADMIN))
+	TABLE_USERS := development.Register.Table(Users{}).NeedRoles(USER_ROLES)
 	TABLE_NOTIFICATIONS := development.Register.Table(Notifications{}).NeedTables(TABLE_USERS)
 	TABLE_USERS_NOTIFICATIONS := development.Register.Table(UsersNotifications{}).Name("users_notifications").NeedTables(TABLE_USERS, TABLE_NOTIFICATIONS)
 	// DEVELOPMENT_USER.GrantPrivileges(TABLE_USERS, borm.ALL)
@@ -77,8 +86,8 @@ func main() {
 	}
 	var issuerId int
 	err = transaction.Do(TABLE_USERS.
-		Insert("email", "password", "name").
-		Values("noeeekr@gmail.com", "noeeekr", "noeeekr").
+		Insert("email", "password", "name", "role").
+		Values("noeeekr@gmail.com", "noeeekr", "noeeekr", ADMIN).
 		Returning("id").Scanner(scanInt(&issuerId)),
 	)
 	if err != nil {
@@ -87,8 +96,8 @@ func main() {
 	}
 	var targetId int
 	err = transaction.Do(TABLE_USERS.
-		Insert("email", "password", "name").
-		Values("cardozoandre0101@gmail.com", "andre", "andre").
+		Insert("email", "password", "name", "role").
+		Values("cardozoandre0101@gmail.com", "andre", "andre", STUDENT).
 		Returning("id").Scanner(scanInt(&targetId)),
 	)
 	if err != nil {
