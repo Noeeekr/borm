@@ -1,18 +1,24 @@
 package borm
 
 import (
+	"database/sql"
+	"fmt"
+
 	_ "github.com/lib/pq"
 
 	"github.com/Noeeekr/borm/configuration"
-	"github.com/Noeeekr/borm/errors"
-	"github.com/Noeeekr/borm/internal/manager"
-	"github.com/Noeeekr/borm/internal/registers"
 )
 
 func Settings() *configuration.Configuration {
 	return configuration.Settings()
 }
-
-func Connect(user string, password string, host string, database string) (*manager.DatabaseManager, *errors.Error) {
-	return manager.Connect(registers.NewUser(user, password), host, registers.DatabaseName(database))
+func Connect(username string, password string, host string, dbname string) (*Commiter, *Error) {
+	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", username, password, host, dbname))
+	if err != nil {
+		return nil, NewError(err.Error()).Status(ErrBadConnection)
+	}
+	if err := db.Ping(); err != nil {
+		return nil, NewError("Unable to ping database").Append(err.Error()).Status(ErrBadConnection)
+	}
+	return newCommiter(dbname, newUser(username, password), db, host), nil
 }

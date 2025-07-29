@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/Noeeekr/borm"
-	"github.com/Noeeekr/borm/errors"
-	"github.com/Noeeekr/borm/internal/registers"
 )
 
 type UserRole string
@@ -60,17 +58,17 @@ func main() {
 		fmt.Println(err)
 	}
 	// Create new database environments
-	DEVELOPMENT_USER := postgres.Register.User("DEVELOPER", "developer")
-	DEVELOPMENT_DATABASE := postgres.NewDatabase("DEVELOPMENT", DEVELOPMENT_USER)
+	DEVELOPMENT_USER := postgres.RegisterUser("DEVELOPER", "developer")
+	DEVELOPMENT_DATABASE := postgres.RegisterDatabase("DEVELOPMENT", DEVELOPMENT_USER)
 	development, err := postgres.Environment(DEVELOPMENT_DATABASE)
 
 	defer development.DB().Close()
 
 	// Create new database relations
-	USER_ROLES := development.Register.Enum("user_role", string(STUDENT), string(TEACHER), string(ADMIN))
-	TABLE_USERS := development.Register.Table(Users{}).NeedRoles(USER_ROLES)
-	TABLE_NOTIFICATIONS := development.Register.Table(Notifications{}).NeedTables(TABLE_USERS)
-	TABLE_USERS_NOTIFICATIONS := development.Register.Table(UsersNotifications{}).Name("users_notifications").NeedTables(TABLE_USERS, TABLE_NOTIFICATIONS)
+	USER_ROLES := development.RegisterEnum("user_role", string(STUDENT), string(TEACHER), string(ADMIN))
+	TABLE_USERS := development.RegisterTable(Users{}).NeedRoles(USER_ROLES)
+	TABLE_NOTIFICATIONS := development.RegisterTable(Notifications{}).NeedTables(TABLE_USERS)
+	TABLE_USERS_NOTIFICATIONS := development.RegisterTable(UsersNotifications{}).Name("users_notifications").NeedTables(TABLE_USERS, TABLE_NOTIFICATIONS)
 	// DEVELOPMENT_USER.GrantPrivileges(TABLE_USERS, borm.ALL)
 
 	err = development.Relations()
@@ -79,7 +77,7 @@ func main() {
 		return
 	}
 
-	transaction, err := development.Start()
+	transaction, err := development.StartTx()
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -129,16 +127,16 @@ func main() {
 	}
 }
 
-func scanInt(i *int) registers.QueryRowsScanner {
-	return func(rows *sql.Rows, throwErrorOnFound bool) *errors.Error {
+func scanInt(i *int) borm.QueryRowsScanner {
+	return func(rows *sql.Rows, throwErrorOnFound bool) *borm.Error {
 		for rows.Next() {
 			if err := rows.Scan(i); err != nil {
-				return errors.New(err.Error()).Status(errors.ErrFailedOperation)
+				return borm.NewError(err.Error()).Status(borm.ErrFailedOperation)
 			}
 		}
 		err := rows.Close()
 		if err != nil {
-			return errors.New(err.Error()).Status(errors.ErrFailedOperation)
+			return borm.NewError(err.Error()).Status(borm.ErrFailedOperation)
 		}
 		return nil
 	}

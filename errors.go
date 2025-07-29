@@ -1,4 +1,4 @@
-package errors
+package borm
 
 import (
 	"fmt"
@@ -31,7 +31,7 @@ const (
 	ErrBadConnection             ErrorStatus = "Bad connection"
 )
 
-func New(description string) *Error {
+func NewError(description string) *Error {
 	var debugStack string
 	if configuration.Settings().Environment().GetEnvironment() == configuration.DEBUGGING {
 		debugStack += "\n\n[Debugging Stack]: \n\n" + string(debug.Stack())

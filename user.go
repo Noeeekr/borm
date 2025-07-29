@@ -1,4 +1,4 @@
-package registers
+package borm
 
 import (
 	"strings"
@@ -18,7 +18,7 @@ type User struct {
 }
 type UserPrivilegeRequest struct {
 	*User
-	table *Table
+	table *TableRegistor
 	// privileges []TablePrivilege
 	columns []TableColumnName
 }
@@ -29,7 +29,7 @@ func (u *User) Password() string {
 
 // func (u *User) GrantPrivileges(t *Table, p ...TablePrivilege) *UserPrivilegeRequest {
 // 	if len(p) == 0 {
-// 		t.Error = common.NewError("User privileges should not be empty.").Status(common.ErrEmpty)
+// 		tError = common.NeError("User privileges should not be empty.").Status(commonErrEmpty)
 // 	}
 // 	return &UserPrivilegeRequest{
 // 		User:       u,
@@ -53,13 +53,7 @@ func (r *User) WithPassword(password string) *User {
 	r.password = password
 	return r
 }
-func (r *RoleCache) User(name, password string) *User {
-	user := NewUser(name, password)
-	(*r)[user.Name] = user
-	return user
-}
-
-func NewUser(name, password string) *User {
+func newUser(name, password string) *User {
 	roleName := RoleName(strings.ReplaceAll(strings.ToLower(name), " ", "_"))
 	return &User{Role: &Role{Name: roleName, Type: USER}, password: password}
 }

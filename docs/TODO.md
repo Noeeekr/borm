@@ -6,7 +6,7 @@
 5. Migrate Relations: Default tag
 6. Migrate Relations: Improve enum reflection
 
-### Operations 
+### Operations
 1. Store enum type values and do type check in fields using it so it can only use enum values
 
 ### Package
