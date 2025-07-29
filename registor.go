@@ -11,8 +11,9 @@ type Commiter struct {
 	// Tells if something was already created or not
 	RegistorCache map[string]bool
 
-	*TransactionFactory
+	*RolesCache
 	*DatabaseRegistor
+	*TransactionFactory
 }
 
 /*
@@ -28,11 +29,13 @@ func (m *Commiter) DB() *sql.DB {
 	return m.db
 }
 
-func newCommiter(dbname string, user *User, db *sql.DB, host string) *Commiter {
+func newCommiter(r *DatabaseRegistor, host string, db *sql.DB) *Commiter {
 	return &Commiter{
-		host:             host,
-		db:               db,
-		DatabaseRegistor: newDatabaseRegistor(DatabaseName(dbname), user),
-		RegistorCache:    map[string]bool{},
+		host:               host,
+		db:                 db,
+		DatabaseRegistor:   r,
+		RolesCache:         roles,
+		RegistorCache:      map[string]bool{},
+		TransactionFactory: newTransactionFactory(db),
 	}
 }

@@ -5,23 +5,26 @@ import "strings"
 type DatabasesCache map[DatabaseName]*DatabaseRegistor
 type RolesCache map[RoleName]RoleMethods
 type TablesCache map[TableName]*TableRegistor
+type TypesCache map[TypName]TypMethods
 
-var Databases = DatabasesCache{}
+var databases = DatabasesCache{}
+var roles = newRolesCache()
 
 func newTableCache() *TablesCache {
 	return &TablesCache{}
 }
-func (r *RolesCache) RegisterUser(name, password string) *User {
-	user := newUser(name, password)
-	(*r)[user.Name] = user
-	return user
+func newTypesCache() *TypesCache {
+	return &TypesCache{}
 }
-func (r *RolesCache) RegisterEnum(name string, values ...string) *Enum {
-	roleName := RoleName(strings.ToLower(name))
-	enum := &Enum{Role: &Role{Name: roleName, Type: ENUM}, options: values}
-	(*r)[roleName] = enum
-	return enum
-}
-func newRoleCache() *RolesCache {
+func newRolesCache() *RolesCache {
 	return &RolesCache{}
+}
+func (r *RolesCache) RegisterUser(name string, password string) *User {
+	return RegisterUser(name, password)
+}
+func (r *TypesCache) RegisterEnum(name string, values ...string) *Enum {
+	typName := TypName(strings.ToLower(name))
+	enum := &Enum{Typ: &Typ{Name: typName, Type: ENUM}, options: values}
+	(*r)[typName] = enum
+	return enum
 }

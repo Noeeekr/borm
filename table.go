@@ -30,7 +30,7 @@ type TableRegistor struct {
 	Fields    map[TableColumnName]*TableColumns
 	Error     *Error
 
-	RequiredRoles  []RoleMethods
+	RequiredTypes  []TypMethods
 	RequiredTables []*TableRegistor
 
 	// (RoleName) can have (TablePrivileges) on columns (TableColumnName)
@@ -86,8 +86,8 @@ func (t *TableRegistor) NeedTables(dependencies ...*TableRegistor) *TableRegisto
 	t.RequiredTables = append(t.RequiredTables, dependencies...)
 	return t
 }
-func (t *TableRegistor) NeedRoles(dependencies ...RoleMethods) *TableRegistor {
-	t.RequiredRoles = append(t.RequiredRoles, dependencies...)
+func (t *TableRegistor) NeedRoles(dependencies ...TypMethods) *TableRegistor {
+	t.RequiredTypes = append(t.RequiredTypes, dependencies...)
 	return t
 }
 func (m *TableRegistor) Update() *Query {

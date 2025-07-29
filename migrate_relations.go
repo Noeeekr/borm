@@ -64,13 +64,13 @@ func (r *Commiter) migrateTable(t *Transaction, table *TableRegistor) *Error {
 		}
 	}
 
-	for _, role := range table.RequiredRoles {
-		if ok := r.RegistorCache[string(role.GetName())]; ok {
+	for _, typ := range table.RequiredTypes {
+		if ok := r.RegistorCache[string(typ.GetName())]; ok {
 			continue
 		}
 
-		if role.GetType() == ENUM {
-			enum := role.(*Enum)
+		if typ.GetType() == ENUM {
+			enum := typ.(*Enum)
 			err = r.migrateEnum(t, enum)
 		}
 		// error separated since the if above can become a switch with many role types
@@ -78,7 +78,7 @@ func (r *Commiter) migrateTable(t *Transaction, table *TableRegistor) *Error {
 			return err
 		}
 
-		r.RegistorCache[string(role.GetName())] = true
+		r.RegistorCache[string(typ.GetName())] = true
 	}
 
 	for _, subtable := range table.RequiredTables {

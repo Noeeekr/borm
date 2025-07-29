@@ -6,7 +6,7 @@ services:
     networks:
       - internal
     env_file:
-      - ./postgres.env
+      - ./secrets/postgres.env
 
   borm:
     build:

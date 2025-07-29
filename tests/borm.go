@@ -53,15 +53,22 @@ func main() {
 		}
 	}
 
-	postgres, err := borm.Connect("postgres", "noeeekr", "db", "postgres")
+	// Registers default postgres database to migrate stuff through it
+	commiter, err := borm.Connect(borm.RegisterDatabase("postgres", "db", borm.RegisterUser("postgres", "noeeekr")))
 	if err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
-	// Create new database environments
-	DEVELOPMENT_USER := postgres.RegisterUser("DEVELOPER", "developer")
-	DEVELOPMENT_DATABASE := postgres.RegisterDatabase("DEVELOPMENT", DEVELOPMENT_USER)
-	development, err := postgres.Environment(DEVELOPMENT_DATABASE)
 
+	// Create new database environments
+	DEVELOPMENT_USER := commiter.RegisterUser("DEVELOPER", "developer")
+	DEVELOPMENT_DATABASE := commiter.RegisterDatabase("DEVELOPMENT", DEVELOPMENT_USER)
+	err = commiter.MigrateUsers(DEVELOPMENT_USER)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	development, err := commiter.MigrateDatabase(DEVELOPMENT_DATABASE)
 	defer development.DB().Close()
 
 	// Create new database relations
@@ -74,7 +81,7 @@ func main() {
 	err = development.Relations()
 	if err != nil {
 		fmt.Println(err)
-		return
+		os.Exit(1)
 	}
 
 	transaction, err := development.StartTx()

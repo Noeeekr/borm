@@ -12,19 +12,8 @@ type RoleMethods interface {
 	GetName() RoleName
 	GetType() RoleType
 }
-type EnumMethods interface {
-	GetValues() []string
-}
-
-type Enum struct {
-	EnumMethods
-
-	*Role
-	options []string
-}
 
 const (
-	ENUM RoleType = "enum"
 	USER RoleType = "user"
 )
 
@@ -33,7 +22,4 @@ func (r *Role) GetName() RoleName {
 }
 func (r *Role) GetType() RoleType {
 	return r.Type
-}
-func (r *Enum) GetValues() []string {
-	return r.options
 }

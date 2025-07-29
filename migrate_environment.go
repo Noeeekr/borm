@@ -6,38 +6,35 @@ import (
 	"github.com/Noeeekr/borm/configuration"
 )
 
-// Environment migrates the environment if migrations is enabled and then attempts to connect to the database. If migrations is not enabled it jumps to the end.
-func (m *Commiter) Environment(database *DatabaseRegistor) (*Commiter, *Error) {
-	configuration := configuration.Settings().Migrations()
-	if !configuration.Enabled {
-		return Connect(string(database.Owner.Name), database.Owner.Password(), m.host, string(database.Name))
+// Environment migrates the environment if migrations is enabled and then attempts to connect to the database. If migrations is not enabled it jumps to the connection.
+func (m *Commiter) MigrateUsers(users ...*User) *Error {
+	migrations := configuration.Settings().Migrations()
+	if !migrations.Enabled {
+		return NewError("Migration must be enabled first").Status(ErrConfiguration)
 	}
 
-	registeredUsers := []*User{}
-	for _, role := range *database.RolesCache {
-		if role.GetType() == USER {
-			user := role.(*User)
-			registeredUsers = append(registeredUsers, user)
-		}
-	}
-
-	created, err := m.migrateUsers(registeredUsers...)
+	created, err := m.migrateUsers(users...)
 	if err != nil {
-		if configuration.Undo {
-			return nil, err.Join(m.dropDatabaseUsers(created...))
+		if migrations.Undo {
+			return err.Join(m.dropDatabaseUsers(created...))
 		}
+		return err
+	}
+
+	return nil
+}
+func (m *Commiter) MigrateDatabase(registor *DatabaseRegistor) (*Commiter, *Error) {
+	migrations := configuration.Settings().Migrations()
+	if !migrations.Enabled {
+		return Connect(registor)
+	}
+
+	err := m.migrateDatabase(registor)
+	if err != nil {
 		return nil, err
 	}
 
-	err = m.migrateDatabase(database)
-	if err != nil {
-		if configuration.Undo {
-			return nil, err.Join(m.dropDatabaseUsers(created...))
-		}
-		return nil, err
-	}
-
-	return Connect(string(database.Owner.Name), database.Owner.password, m.host, string(database.Name))
+	return Connect(registor)
 }
 
 func (m *Commiter) migrateUsers(users ...*User) ([]*User, *Error) {

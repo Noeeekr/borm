@@ -9,16 +9,21 @@ import (
 	"github.com/Noeeekr/borm/configuration"
 )
 
+const (
+	DEBUGGING  = configuration.DEBUGGING
+	PRODUCTION = configuration.PRODUCTION
+)
+
 func Settings() *configuration.Configuration {
 	return configuration.Settings()
 }
-func Connect(username string, password string, host string, dbname string) (*Commiter, *Error) {
-	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", username, password, host, dbname))
+func Connect(registor *DatabaseRegistor) (*Commiter, *Error) {
+	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", registor.Owner.Name, registor.Owner.password, registor.Host, registor.Name))
 	if err != nil {
 		return nil, NewError(err.Error()).Status(ErrBadConnection)
 	}
 	if err := db.Ping(); err != nil {
 		return nil, NewError("Unable to ping database").Append(err.Error()).Status(ErrBadConnection)
 	}
-	return newCommiter(dbname, newUser(username, password), db, host), nil
+	return newCommiter(registor, registor.Host, db), nil
 }

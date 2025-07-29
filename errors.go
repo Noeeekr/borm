@@ -17,6 +17,7 @@ type Error struct {
 type ErrorStatus string
 
 const (
+	ErrConfiguration             ErrorStatus = "Configuration necessary"
 	ErrInvalidType               ErrorStatus = "Invalid type"
 	ErrFound                     ErrorStatus = "Found"
 	ErrNotFound                  ErrorStatus = "Not found"
