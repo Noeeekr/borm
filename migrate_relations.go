@@ -37,7 +37,7 @@ func (r *Commiter) migrateTables(t *Transaction) *Error {
 		return err
 	}
 
-	for _, table := range *r.DatabaseRegistor.TablesCache {
+	for _, table := range *r.TablesCache {
 		if err := r.migrateTable(t, table); err != nil {
 			return err
 		}
@@ -45,7 +45,7 @@ func (r *Commiter) migrateTables(t *Transaction) *Error {
 
 	return nil
 }
-func (r *Commiter) migrateTable(t *Transaction, table *TableRegistor) *Error {
+func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) *Error {
 	var exists bool
 	existsQuery := NewQuery("SELECT tablename FROM pg_catalog.pg_tables WHERE tablename = $1").
 		Scanner(CheckExist(&exists))
@@ -97,7 +97,6 @@ func (r *Commiter) migrateTable(t *Transaction, table *TableRegistor) *Error {
 	r.RegistorCache[string(table.TableName)] = true
 
 	query := parseCreateTableQuery(table)
-	fmt.Println(query.Query)
 	return t.Do(query)
 }
 func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) *Error {
@@ -124,15 +123,13 @@ func (r *Commiter) dropEnum(t *Transaction, enum *Enum) *Error {
 	query.CurrentValues = append(query.CurrentValues, enum.Name)
 	return t.Do(query)
 }
-func (r *Commiter) dropTable(t *Transaction, table *TableRegistor) *Error {
-	query := NewQuery("DROP TABLE $1 CASCADE;")
+func (r *Commiter) dropTable(t *Transaction, table *TableRegistry) *Error {
+	query := NewQuery(fmt.Sprintf("DROP TABLE %s CASCADE", table.TableName))
 	query.CurrentValues = append(query.CurrentValues, table.Name)
 
-	t.Do(query)
-
-	return nil
+	return t.Do(query)
 }
-func parseCreateTableQuery(table *TableRegistor) *Query {
+func parseCreateTableQuery(table *TableRegistry) *Query {
 	var fields []string
 	for _, field := range table.Fields {
 		query := fmt.Sprintf("\n\t%s %s", field.Name, field.Type)

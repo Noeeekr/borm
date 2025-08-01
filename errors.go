@@ -8,7 +8,7 @@ import (
 )
 
 type Error struct {
-	Stat       string
+	Stat       ErrorStatus
 	Desc       string
 	Joins      []*Error
 	DebugStack string
@@ -54,7 +54,7 @@ func (e *Error) String() string {
 		subjacentErrors += err.String()
 	}
 
-	return e.Stat + e.Desc + subjacentErrors + e.DebugStack
+	return fmt.Sprintf("[%s]: %s%s%s", e.Stat, e.Desc, subjacentErrors, e.DebugStack)
 }
 
 // Appends to the end of the last description with a separator
@@ -69,7 +69,7 @@ func (e *Error) Insert(d string) *Error {
 	return e
 }
 func (e *Error) Status(s ErrorStatus) *Error {
-	e.Stat = fmt.Sprintf("[%s]: ", s)
+	e.Stat = s
 	return e
 }
 

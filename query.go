@@ -17,13 +17,24 @@ type Query struct {
 	hasWhere bool
 	hasSet   bool
 
+	// For build
 	Query         string
-	TableRegistor *TableRegistor
+	TableRegistry *TableRegistry
 	Error         *Error
+
+	// For joins
+	tables map[string]*TableRegistry
+	fields []string
 
 	RowsScanner      QueryRowsScanner
 	throErrorOnFound bool
 }
+type InnerJoinQuery Query
+type InnerJoiner interface {
+	On(fieldA, fieldB string) *Query
+}
+
+const FIELD_PARSER_PLACEHOLDER = "$$$"
 
 func NewQuery(q string) *Query {
 	return &Query{Query: q}
@@ -83,7 +94,7 @@ func (q *Query) Values(values ...any) *Query {
 	q.Query += fmt.Sprintf("VALUES %s ", strings.Join(fields, ","))
 	return q
 }
-func (q *Query) Set(field TableColumnName, value any) *Query {
+func (q *Query) Set(field string, value any) *Query {
 	if q.Error != nil {
 		return q
 	}
@@ -91,10 +102,7 @@ func (q *Query) Set(field TableColumnName, value any) *Query {
 		q.Error = NewError("Must be INSERT or UPDATE").Status(ErrInvalidMethodChain)
 		return q
 	}
-	if _, err := q.findFieldsByName(field); err != nil {
-		q.Error = err
-		return q
-	}
+	q.fields = append(q.fields, field)
 
 	if q.hasSet {
 		q.Query += ", "
@@ -108,7 +116,7 @@ func (q *Query) Set(field TableColumnName, value any) *Query {
 	q.CurrentValues = append(q.CurrentValues, value)
 	return q
 }
-func (q *Query) Where(fieldName TableColumnName, fieldValue any) *Query {
+func (q *Query) Where(fieldName string, fieldValue any) *Query {
 	if q.Error != nil {
 		return q
 	}
@@ -116,10 +124,7 @@ func (q *Query) Where(fieldName TableColumnName, fieldValue any) *Query {
 		q.Error = NewError("Must be INSERT | UPDATE | DELETE").Status(ErrInvalidMethodChain)
 		return q
 	}
-	if _, err := q.findFieldsByName(fieldName); err != nil {
-		q.Error = err
-		return q
-	}
+	q.fields = append(q.fields, fieldName)
 
 	if q.hasWhere {
 		q.Query += "AND "
@@ -133,7 +138,29 @@ func (q *Query) Where(fieldName TableColumnName, fieldValue any) *Query {
 	q.CurrentValues = append(q.CurrentValues, fieldValue)
 	return q
 }
-func (q *Query) Returning(fields ...TableColumnName) *Query {
+func (q *Query) As(alias string) *Query {
+	if q.Error != nil {
+		return q
+	}
+	q.Query += fmt.Sprintf("AS %s ", alias)
+	return q
+}
+func (q *Query) InnerJoin(r *TableRegistry, alias string) *InnerJoinQuery {
+	if q.Error != nil {
+		return (*InnerJoinQuery)(q)
+	}
+	q.tables[alias] = r
+	q.Query += fmt.Sprintf("INNER JOIN %s AS %s ", r.TableName, alias)
+	return (*InnerJoinQuery)(q)
+}
+func (q *InnerJoinQuery) On(fieldA, fieldB string) *Query {
+	if q.Error != nil {
+		return (*Query)(q)
+	}
+	q.Query += fmt.Sprintf("ON %s = %s ", fieldA, fieldB)
+	return (*Query)(q)
+}
+func (q *Query) Returning(fields ...string) *Query {
 	if q.Error != nil {
 		return q
 	}
@@ -141,38 +168,44 @@ func (q *Query) Returning(fields ...TableColumnName) *Query {
 		q.Error = NewError("Must be INSERT | UPDATE | DELETE").Status(ErrInvalidMethodChain)
 		return q
 	}
-	columnsNames, err := q.findFieldsByName(fields...)
-	if err != nil {
-		q.Error = err
-		return q
-	}
-	q.Query += fmt.Sprintf("RETURNING %s", strings.Join(columnsNames, ", "))
+
+	q.fields = append(q.fields, fields...)
+	q.Query += fmt.Sprintf("RETURNING %s", strings.Join(fields, ", "))
 	return q
 }
 
-func (q *Query) findFieldsByName(fieldsName ...TableColumnName) ([]string, *Error) {
+func (q *Query) validateFields() *Error {
 	var fields []string
-	for _, fieldName := range fieldsName {
-		_, exists := q.TableRegistor.Fields[fieldName]
+	for _, fieldName := range q.fields {
+		var table *TableRegistry = q.TableRegistry
+
+		alias, after, found := strings.Cut(fieldName, ".")
+		if found {
+			table = q.tables[alias]
+			fieldName = after
+		}
+		_, exists := table.Fields[TableColumnName(fieldName)]
 		if !exists {
-			return nil, NewError(fmt.Sprintf("%s does not exist in %s", fieldName, q.TableRegistor.TableName)).
-				Status(ErrNotFound)
+			return NewError(fmt.Sprintf("%s does not exist in %s", fieldName, q.TableRegistry.TableName)).
+				Status(ErrSyntax)
 		}
 		fields = append(fields, string(fieldName))
 	}
-	return fields, nil
+	return nil
 }
-func newQueryOnTable(t *TableRegistor) *Query {
+func newQueryOnTable(t *TableRegistry) *Query {
 	var q Query
 	if t == nil {
 		q.Error = NewError("Cannot query nil table").Status(ErrEmpty)
 		return &q
 	}
+
 	table := (*t.cache)[t.TableName]
 	if table.Error != nil {
 		return q.SeError(table.Error)
 	}
-	q.TableRegistor = table
+	q.TableRegistry = table
 	q.placeholderIndex = 1
+	q.tables = make(map[string]*TableRegistry)
 	return &q
 }

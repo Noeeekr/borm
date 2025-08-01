@@ -25,13 +25,13 @@ const (
 
 type TableName string
 type TablePrivilege int
-type TableRegistor struct {
+type TableRegistry struct {
 	TableName TableName
 	Fields    map[TableColumnName]*TableColumns
 	Error     *Error
 
 	RequiredTypes  []TypMethods
-	RequiredTables []*TableRegistor
+	RequiredTables []*TableRegistry
 
 	// (RoleName) can have (TablePrivileges) on columns (TableColumnName)
 	privileges map[RoleName]map[TableColumnName]TablePrivilege
@@ -48,19 +48,19 @@ type TableColumns struct {
 }
 
 // Registers a table for migration and queries
-func (m *TablesCache) RegisterTable(v any) *TableRegistor {
+func (m *TablesCache) RegisterTable(v any) *TableRegistry {
 	typ := reflect.TypeOf(v)
 	if typ.Kind() != reflect.TypeFor[struct{}]().Kind() {
-		var t TableRegistor
+		var t TableRegistry
 		t.Error = NewError(typ.Name() + " must be of kind struct").Status(ErrInvalidType)
 		return &t
 	}
 	tableName := TableName(strings.ToLower(typ.Name()))
-	if TableRegistor, ok := (*m)[tableName]; ok {
-		return TableRegistor
+	if TableRegistry, ok := (*m)[tableName]; ok {
+		return TableRegistry
 	}
 
-	information := &TableRegistor{
+	information := &TableRegistry{
 		TableName: TableName(strings.ToLower(typ.Name())),
 		Fields:    parseFields(typ),
 		cache:     m,
@@ -69,16 +69,16 @@ func (m *TablesCache) RegisterTable(v any) *TableRegistor {
 
 	return information
 }
-func (t *TableRegistor) Name(n string) *TableRegistor {
+func (t *TableRegistry) Name(n string) *TableRegistry {
 	delete(*t.cache, t.TableName)
 	t.TableName = TableName(n)
 	(*t.cache)[t.TableName] = t
 	return t
 }
-func (t *TableRegistor) NeedTables(dependencies ...*TableRegistor) *TableRegistor {
+func (t *TableRegistry) NeedTables(dependencies ...*TableRegistry) *TableRegistry {
 	for _, dependency := range dependencies {
 		if _, ok := (*t.cache)[dependency.TableName]; !ok {
-			t.Error = NewError("TableRegistor is not registered. Unable to use it as a dependency.").
+			t.Error = NewError("TableRegistry is not registered. Unable to use it as a dependency.").
 				Status(ErrNotFound)
 			return t
 		}
@@ -86,53 +86,52 @@ func (t *TableRegistor) NeedTables(dependencies ...*TableRegistor) *TableRegisto
 	t.RequiredTables = append(t.RequiredTables, dependencies...)
 	return t
 }
-func (t *TableRegistor) NeedRoles(dependencies ...TypMethods) *TableRegistor {
+func (t *TableRegistry) NeedRoles(dependencies ...TypMethods) *TableRegistry {
 	t.RequiredTypes = append(t.RequiredTypes, dependencies...)
 	return t
 }
-func (m *TableRegistor) Update() *Query {
+func (m *TableRegistry) Update() *Query {
 	q := newQueryOnTable(m)
 	q.Query += fmt.Sprintf("UPDATE %s ", m.TableName)
 	q.typ = UPDATE
 	return q
 }
-func (m *TableRegistor) Select(fieldsName ...TableColumnName) *Query {
+func (m *TableRegistry) Select(alias string, fieldsName ...string) *Query {
 	q := newQueryOnTable(m)
 	if q.Error != nil {
 		return q
 	}
-	fields, err := q.findFieldsByName(fieldsName...)
-	if err != nil {
-		q.Error = err
-		return q
-	}
+	q.tables[alias] = m
+	q.fields = append(q.fields, fieldsName...)
+
 	q.typ = SELECT
-	q.Query = fmt.Sprintf("SELECT %s FROM %s ", strings.Join(fields, ", "), q.TableRegistor.TableName)
+	q.Query = fmt.Sprintf("SELECT %s ", strings.Join(fieldsName, ", "))
+	q.Query += fmt.Sprintf("FROM %s ", q.TableRegistry.TableName)
+	if alias != "" {
+		q.Query += fmt.Sprintf("AS %s ", alias)
+	}
 	return q
 }
 
-func (m *TableRegistor) Insert(fieldsName ...TableColumnName) *Query {
+func (m *TableRegistry) Insert(fieldsName ...string) *Query {
 	q := newQueryOnTable(m)
 	if q.Error != nil {
 		return q
 	}
-	fields, err := q.findFieldsByName(fieldsName...)
-	if err != nil {
-		q.Error = err
-		return q
-	}
+	q.fields = append(q.fields, fieldsName...)
+
 	q.typ = INSERT
 	q.requiredValueLength = len(fieldsName)
-	q.Query = fmt.Sprintf("INSERT INTO %s (%s) ", q.TableRegistor.TableName, strings.Join(fields, ", "))
+	q.Query = fmt.Sprintf("INSERT INTO %s (%s) ", q.TableRegistry.TableName, strings.Join(fieldsName, ", "))
 	return q
 }
-func (m *TableRegistor) Delete() *Query {
+func (m *TableRegistry) Delete() *Query {
 	q := newQueryOnTable(m)
 	if q.Error != nil {
 		return q
 	}
 	q.typ = DELETE
-	q.Query += fmt.Sprintf("DELETE FROM %s ", q.TableRegistor.TableName)
+	q.Query += fmt.Sprintf("DELETE FROM %s ", q.TableRegistry.TableName)
 	return q
 }
 

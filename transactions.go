@@ -31,6 +31,9 @@ func NewTransaction(tx *sql.Tx) *Transaction {
 }
 
 func (t *Transaction) Do(query *Query) *Error {
+	if err := query.validateFields(); err != nil {
+		return err
+	}
 	if query == nil {
 		return NewError("Failed transaction").Append("Unable to proceed, cannot use empty queries").Status(ErrSyntax)
 	}

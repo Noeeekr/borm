@@ -89,21 +89,22 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	var issuerId int
+	var user1Id int
+
 	err = transaction.Do(TABLE_USERS.
 		Insert("email", "password", "name", "role").
 		Values("noeeekr@gmail.com", "noeeekr", "noeeekr", ADMIN).
-		Returning("id").Scanner(scanInt(&issuerId)),
+		Returning("id").Scanner(scanInt(&user1Id)),
 	)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	var targetId int
+	var user2Id int
 	err = transaction.Do(TABLE_USERS.
 		Insert("email", "password", "name", "role").
 		Values("cardozoandre0101@gmail.com", "andre", "andre", STUDENT).
-		Returning("id").Scanner(scanInt(&targetId)),
+		Returning("id").Scanner(scanInt(&user2Id)),
 	)
 	if err != nil {
 		fmt.Println(err)
@@ -112,7 +113,7 @@ func main() {
 	var notificationId int
 	err = transaction.Do(TABLE_NOTIFICATIONS.
 		Insert("issuer_id", "title", "description").
-		Values(issuerId, "test notification title", "test notification description").
+		Values(user1Id, "test notification title", "test notification description").
 		Returning("id").Scanner(scanInt(&notificationId)),
 	)
 	if err != nil {
@@ -121,7 +122,24 @@ func main() {
 	}
 	err = transaction.Do(TABLE_USERS_NOTIFICATIONS.
 		Insert("user_id", "notification_id").
-		Values(targetId, notificationId),
+		Values(user1Id, notificationId),
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = transaction.Do(TABLE_NOTIFICATIONS.
+		Insert("issuer_id", "title", "description").
+		Values(user1Id, "test notification title 2", "test notification description 2").
+		Returning("id").Scanner(scanInt(&notificationId)),
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = transaction.Do(TABLE_USERS_NOTIFICATIONS.
+		Insert("user_id", "notification_id").
+		Values(user1Id, notificationId),
 	)
 	if err != nil {
 		fmt.Println(err)
@@ -132,18 +150,47 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
+	transaction, err = development.StartTx()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	var rowAmount int
+	err = transaction.Do(TABLE_USERS.
+		Select("u", "u.id", "n.id").
+		InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id").
+		InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id").
+		Where("email", "noeeekr@gmail.com").
+		Scanner(RowAmount(&rowAmount)),
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("[Issuer ID][Insert]: ", user1Id)
+	fmt.Println("[Notification Rows found]: ", rowAmount)
 }
 
 func scanInt(i *int) borm.QueryRowsScanner {
 	return func(rows *sql.Rows, throwErrorOnFound bool) *borm.Error {
-		for rows.Next() {
+		defer rows.Close()
+		if rows.Next() {
 			if err := rows.Scan(i); err != nil {
 				return borm.NewError(err.Error()).Status(borm.ErrFailedOperation)
 			}
+		} else {
+			return borm.NewError("No rows found").Status(borm.ErrNotFound)
 		}
-		err := rows.Close()
-		if err != nil {
-			return borm.NewError(err.Error()).Status(borm.ErrFailedOperation)
+		return nil
+	}
+}
+
+func RowAmount(i *int) borm.QueryRowsScanner {
+	return func(rows *sql.Rows, throwErrorOnFound bool) *borm.Error {
+		defer rows.Close()
+		for rows.Next() {
+			*i++
 		}
 		return nil
 	}

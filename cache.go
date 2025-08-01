@@ -4,7 +4,7 @@ import "strings"
 
 type DatabasesCache map[DatabaseName]*DatabaseRegistor
 type RolesCache map[RoleName]RoleMethods
-type TablesCache map[TableName]*TableRegistor
+type TablesCache map[TableName]*TableRegistry
 type TypesCache map[TypName]TypMethods
 
 var databases = DatabasesCache{}
