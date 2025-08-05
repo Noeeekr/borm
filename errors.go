@@ -30,6 +30,7 @@ const (
 	ErrFailedTransactionCommit   ErrorStatus = "Failed transaction commit"
 	ErrFailedTransactionRollback ErrorStatus = "Failed transaction rollback"
 	ErrBadConnection             ErrorStatus = "Bad connection"
+	ErrUnexpected                ErrorStatus = "Unexpected event"
 )
 
 func NewError(description string) *Error {
