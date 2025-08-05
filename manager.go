@@ -30,6 +30,9 @@ func (m *TransactionFactory) Do(query *Query) *Error {
 	if query.Error != nil {
 		return query.Error
 	}
+	if err := query.validateFields(); err != nil {
+		return err
+	}
 
 	stmt, err := m.database.Prepare(query.Query)
 	if err != nil {
