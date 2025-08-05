@@ -50,11 +50,11 @@ func (q *Query) Scanner(fun QueryRowsScanner) *Query {
 }
 
 // Switch to throw response error on found instead of not found..
-func (q *Query) ThroErrorOnFound() *Query {
+func (q *Query) ThrowErrorOnFound() *Query {
 	q.throErrorOnFound = true
 	return q
 }
-func (q *Query) SeError(e *Error) *Query {
+func (q *Query) SetError(e *Error) *Query {
 	q.Error = e
 	return q
 }
@@ -200,9 +200,9 @@ func newQueryOnTable(t *TableRegistry) *Query {
 		return &q
 	}
 
-	table := (*t.cache)[t.TableName]
+	table := (*t.databaseCache)[t.TableName]
 	if table.Error != nil {
-		return q.SeError(table.Error)
+		return q.SetError(table.Error)
 	}
 	q.TableRegistry = table
 	q.placeholderIndex = 1
