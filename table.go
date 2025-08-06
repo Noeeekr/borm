@@ -33,10 +33,7 @@ type TableRegistry struct {
 	RequiredTypes  []TypMethods
 	RequiredTables []*TableRegistry
 
-	// (RoleName) can have (TablePrivileges) on columns (TableColumnName)
-	privileges map[RoleName]map[TableColumnName]TablePrivilege
-
-	cache *TablesCache
+	databaseCache *TablesCache
 }
 
 type TableColumnName string
@@ -47,37 +44,47 @@ type TableColumns struct {
 	ForeignKey  string
 }
 
-// Registers a table for migration and queries
+func NewTableRegistry(name string) *TableRegistry {
+	return &TableRegistry{
+		TableName: TableName(strings.ToLower(name)),
+		Fields:    make(map[TableColumnName]*TableColumns),
+	}
+}
+
+// Registers a table for migration and queries. v must be a struct type.
 func (m *TablesCache) RegisterTable(v any) *TableRegistry {
+	// Check if the value is a struct
 	typ := reflect.TypeOf(v)
 	if typ.Kind() != reflect.TypeFor[struct{}]().Kind() {
 		var t TableRegistry
 		t.Error = NewError(typ.Name() + " must be of kind struct").Status(ErrInvalidType)
 		return &t
 	}
+	// Check if the struct is already cached and returns it if so
 	tableName := TableName(strings.ToLower(typ.Name()))
 	if TableRegistry, ok := (*m)[tableName]; ok {
 		return TableRegistry
 	}
 
-	information := &TableRegistry{
-		TableName: TableName(strings.ToLower(typ.Name())),
-		Fields:    parseFields(typ),
-		cache:     m,
+	// Creates and caches a new TableRegistry
+	registry := &TableRegistry{
+		TableName:     TableName(strings.ToLower(typ.Name())),
+		Fields:        parseFields(typ),
+		databaseCache: m,
 	}
-	(*m)[tableName] = information
+	(*m)[tableName] = registry
 
-	return information
+	return registry
 }
 func (t *TableRegistry) Name(n string) *TableRegistry {
-	delete(*t.cache, t.TableName)
+	delete(*t.databaseCache, t.TableName)
 	t.TableName = TableName(n)
-	(*t.cache)[t.TableName] = t
+	(*t.databaseCache)[t.TableName] = t
 	return t
 }
 func (t *TableRegistry) NeedTables(dependencies ...*TableRegistry) *TableRegistry {
 	for _, dependency := range dependencies {
-		if _, ok := (*t.cache)[dependency.TableName]; !ok {
+		if _, ok := (*t.databaseCache)[dependency.TableName]; !ok {
 			t.Error = NewError("TableRegistry is not registered. Unable to use it as a dependency.").
 				Status(ErrNotFound)
 			return t

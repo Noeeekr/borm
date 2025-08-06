@@ -23,7 +23,7 @@ func (m *Commiter) MigrateUsers(users ...*User) *Error {
 
 	return nil
 }
-func (m *Commiter) MigrateDatabase(registor *DatabaseRegistor) (*Commiter, *Error) {
+func (m *Commiter) MigrateDatabase(registor *DatabaseRegistry) (*Commiter, *Error) {
 	migrations := configuration.Settings().Migrations()
 	if !migrations.Enabled {
 		return Connect(registor)
@@ -81,7 +81,7 @@ func (m *Commiter) migrateDatabaseUser(user *User) *Error {
 	}
 	return nil
 }
-func (m *Commiter) migrateDatabase(database *DatabaseRegistor) *Error {
+func (m *Commiter) migrateDatabase(database *DatabaseRegistry) *Error {
 	rows, err := m.db.Query("SELECT datname FROM pg_catalog.pg_database WHERE datname = $1;", database.Name)
 	if err != nil {
 		return NewError(err.Error()).Status(ErrSyntax)
@@ -139,14 +139,14 @@ func (m *Commiter) dropDatabaseUsers(users ...*User) *Error {
 	}
 	return nil
 }
-func (m *Commiter) dropDatabase(database *DatabaseRegistor) *Error {
+func (m *Commiter) dropDatabase(database *DatabaseRegistry) *Error {
 	_, err := m.db.Exec(fmt.Sprintf("DROP DATABASE %s;", database.Name))
 	if err != nil {
 		return NewError(err.Error()).Status(ErrFailedOperation)
 	}
 	return nil
 }
-func (m *Commiter) parseCreateDatabaseQuery(database *DatabaseRegistor) *Query {
+func (m *Commiter) parseCreateDatabaseQuery(database *DatabaseRegistry) *Query {
 	q := Query{}
 	q.Query = fmt.Sprintf("CREATE DATABASE %s WITH OWNER = %s;", database.Name, database.Owner.Name)
 	return &q

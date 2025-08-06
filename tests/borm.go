@@ -78,7 +78,7 @@ func main() {
 	TABLE_USERS_NOTIFICATIONS := development.RegisterTable(UsersNotifications{}).Name("users_notifications").NeedTables(TABLE_USERS, TABLE_NOTIFICATIONS)
 	// DEVELOPMENT_USER.GrantPrivileges(TABLE_USERS, borm.ALL)
 
-	err = development.Relations()
+	err = development.MigrateRelations()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

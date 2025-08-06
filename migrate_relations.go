@@ -8,9 +8,9 @@ import (
 )
 
 // returns nil if migrations are not enabled in settings
-func (r *Commiter) Relations() *Error {
+func (r *Commiter) MigrateRelations() *Error {
 	if !configuration.Settings().Migrations().Enabled {
-		return nil
+		return NewError("Migration's disabled").Status(ErrConfiguration)
 	}
 	manager := newTransactionFactory(r.db)
 	t, err := manager.StartTx()
@@ -24,8 +24,29 @@ func (r *Commiter) Relations() *Error {
 
 	return t.Commit()
 }
+func (r *Commiter) DropRelations() *Error {
+	if !configuration.Settings().Migrations().Enabled {
+		return NewError("Migration's disabled").Status(ErrConfiguration)
+	}
+
+	manager := newTransactionFactory(r.db)
+	t, err := manager.StartTx()
+	if err != nil {
+		return err
+	}
+
+	tables := []*TableRegistry{}
+	for _, table := range *r.DatabaseRegistry.TablesCache {
+		tables = append(tables, table)
+	}
+	if err := r.dropTables(t, tables...); err != nil {
+		return err
+	}
+
+	return t.Commit()
+}
 func (r *Commiter) validateTables() *Error {
-	for _, table := range *r.DatabaseRegistor.TablesCache {
+	for _, table := range *r.DatabaseRegistry.TablesCache {
 		if table.Error != nil {
 			return table.Error
 		}
@@ -59,7 +80,7 @@ func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) *Error {
 		return nil
 	}
 	if exists && configuration.Recreate {
-		if err = r.dropTable(t, table); err != nil {
+		if err = r.dropTables(t, table); err != nil {
 			return err
 		}
 	}
@@ -123,11 +144,15 @@ func (r *Commiter) dropEnum(t *Transaction, enum *Enum) *Error {
 	query.CurrentValues = append(query.CurrentValues, enum.Name)
 	return t.Do(query)
 }
-func (r *Commiter) dropTable(t *Transaction, table *TableRegistry) *Error {
-	query := NewQuery(fmt.Sprintf("DROP TABLE %s CASCADE", table.TableName))
-	query.CurrentValues = append(query.CurrentValues, table.Name)
-
-	return t.Do(query)
+func (r *Commiter) dropTables(t *Transaction, tables ...*TableRegistry) *Error {
+	for _, table := range tables {
+		query := NewQuery(fmt.Sprintf("DROP TABLE %s CASCADE", table.TableName))
+		query.CurrentValues = append(query.CurrentValues, table.Name)
+		if err := t.Do(query); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func parseCreateTableQuery(table *TableRegistry) *Query {
 	var fields []string

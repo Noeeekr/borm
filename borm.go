@@ -17,7 +17,7 @@ const (
 func Settings() *configuration.Configuration {
 	return configuration.Settings()
 }
-func Connect(registor *DatabaseRegistor) (*Commiter, *Error) {
+func Connect(registor *DatabaseRegistry) (*Commiter, *Error) {
 	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", registor.Owner.Name, registor.Owner.password, registor.Host, registor.Name))
 	if err != nil {
 		return nil, NewError(err.Error()).Status(ErrBadConnection)

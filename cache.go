@@ -2,7 +2,7 @@ package borm
 
 import "strings"
 
-type DatabasesCache map[DatabaseName]*DatabaseRegistor
+type DatabasesCache map[DatabaseName]*DatabaseRegistry
 type RolesCache map[RoleName]RoleMethods
 type TablesCache map[TableName]*TableRegistry
 type TypesCache map[TypName]TypMethods

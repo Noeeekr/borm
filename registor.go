@@ -12,7 +12,7 @@ type Commiter struct {
 	RegistorCache map[string]bool
 
 	*RolesCache
-	*DatabaseRegistor
+	*DatabaseRegistry
 	*TransactionFactory
 }
 
@@ -29,11 +29,11 @@ func (m *Commiter) DB() *sql.DB {
 	return m.db
 }
 
-func newCommiter(r *DatabaseRegistor, host string, db *sql.DB) *Commiter {
+func newCommiter(r *DatabaseRegistry, host string, db *sql.DB) *Commiter {
 	return &Commiter{
 		host:               host,
 		db:                 db,
-		DatabaseRegistor:   r,
+		DatabaseRegistry:   r,
 		RolesCache:         roles,
 		RegistorCache:      map[string]bool{},
 		TransactionFactory: newTransactionFactory(db),

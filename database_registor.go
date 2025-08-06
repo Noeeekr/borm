@@ -5,7 +5,7 @@ import (
 )
 
 type DatabaseName string
-type DatabaseRegistor struct {
+type DatabaseRegistry struct {
 	Name  DatabaseName
 	Host  string
 	Owner *User
@@ -14,15 +14,15 @@ type DatabaseRegistor struct {
 	*TypesCache
 }
 
-func (r *DatabaseRegistor) RegisterDatabase(dbname DatabaseName, owner *User) *DatabaseRegistor {
+func (r *DatabaseRegistry) RegisterDatabase(dbname DatabaseName, owner *User) *DatabaseRegistry {
 	return RegisterDatabase(string(dbname), r.Host, owner)
 }
-func RegisterDatabase(dbname string, host string, owner *User) *DatabaseRegistor {
+func RegisterDatabase(dbname string, host string, owner *User) *DatabaseRegistry {
 	databaseName := DatabaseName(strings.ToLower(dbname))
 	if database, ok := databases[databaseName]; ok {
 		return database
 	}
-	return &DatabaseRegistor{
+	return &DatabaseRegistry{
 		Name:        databaseName,
 		Owner:       owner,
 		Host:        host,
