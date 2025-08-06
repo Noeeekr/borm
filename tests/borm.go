@@ -72,7 +72,7 @@ func main() {
 	defer development.DB().Close()
 
 	// Create new database relations
-	USER_ROLES := development.RegisterEnum("user_role", string(STUDENT), string(TEACHER), string(ADMIN))
+	USER_ROLES := development.RegisterEnum("user_role", STUDENT, TEACHER, ADMIN)
 	TABLE_USERS := development.RegisterTable(Users{}).NeedRoles(USER_ROLES)
 	TABLE_NOTIFICATIONS := development.RegisterTable(Notifications{}).NeedTables(TABLE_USERS)
 	TABLE_USERS_NOTIFICATIONS := development.RegisterTable(UsersNotifications{}).Name("users_notifications").NeedTables(TABLE_USERS, TABLE_NOTIFICATIONS)

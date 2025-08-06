@@ -19,7 +19,8 @@ type Enum struct {
 	EnumMethods
 	*Typ
 
-	options []string
+	registerErrors *Error
+	options        []string
 }
 
 const (

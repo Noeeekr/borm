@@ -147,7 +147,6 @@ func (r *Commiter) dropEnum(t *Transaction, enum *Enum) *Error {
 func (r *Commiter) dropTables(t *Transaction, tables ...*TableRegistry) *Error {
 	for _, table := range tables {
 		query := NewQuery(fmt.Sprintf("DROP TABLE %s CASCADE", table.TableName))
-		query.CurrentValues = append(query.CurrentValues, table.Name)
 		if err := t.Do(query); err != nil {
 			return err
 		}

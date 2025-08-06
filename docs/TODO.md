@@ -7,11 +7,12 @@
 6. Migrate Relations: Improve enum reflection
 
 ### Operations
-1. Store enum type values and do type check in fields using it so it can only use enum values
-2. Change RegisterEnum to accept any and check if it is a string type
+1. `Unnecessary: The user can easily create/manage its own enums` Store enum type values and do type check in fields using it so it can only use enum values
+2. `Done: Users can use their own enums without type convertion` Change RegisterEnum to accept any and check if it is a string type
 3. Create database error array to implement better error managment through error subscription
 4. [LAST ADDED] Add limit method to query builder.
-5. [LAST ADDED} And Clause for where.
+5. [LAST ADDED] And Clause for where.
+
 ### Package
 1. Make types public to use. Will need a huge refactor in folder structure and codebase logic.
 
