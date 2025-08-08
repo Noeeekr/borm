@@ -60,7 +60,7 @@ func (r *Commiter) migrateTables(t *Transaction) *Error {
 
 	for _, table := range *r.TablesCache {
 		if err := r.migrateTable(t, table); err != nil {
-			return err
+			return NewError(fmt.Sprintf("Unable to migrate table %s", table.TableName)).Join(err).Status(ErrSyntax)
 		}
 	}
 
