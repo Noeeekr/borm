@@ -99,24 +99,22 @@ func (t *TableRegistry) NeedRoles(dependencies ...TypMethods) *TableRegistry {
 }
 func (m *TableRegistry) Update() *Query {
 	q := newQueryOnTable(m)
+	q.tableAliases[""] = m
 	q.Query += fmt.Sprintf("UPDATE %s ", m.TableName)
 	q.typ = UPDATE
 	return q
 }
-func (m *TableRegistry) Select(alias string, fieldsName ...string) *Query {
+func (m *TableRegistry) Select(fieldsName ...string) *Query {
 	q := newQueryOnTable(m)
 	if q.Error != nil {
 		return q
 	}
-	q.tableAliases[alias] = m
+	q.tableAliases[""] = m
 	q.fields = append(q.fields, fieldsName...)
 
 	q.typ = SELECT
 	q.Query = fmt.Sprintf("SELECT %s ", strings.Join(fieldsName, ", "))
 	q.Query += fmt.Sprintf("FROM %s ", q.TableRegistry.TableName)
-	if alias != "" {
-		q.Query += fmt.Sprintf("AS %s ", alias)
-	}
 	return q
 }
 
@@ -125,6 +123,7 @@ func (m *TableRegistry) Insert(fieldsName ...string) *Query {
 	if q.Error != nil {
 		return q
 	}
+	q.tableAliases[""] = m
 	q.fields = append(q.fields, fieldsName...)
 
 	q.typ = INSERT
@@ -137,6 +136,7 @@ func (m *TableRegistry) Delete() *Query {
 	if q.Error != nil {
 		return q
 	}
+	q.tableAliases[""] = m
 	q.typ = DELETE
 	q.Query += fmt.Sprintf("DELETE FROM %s ", q.TableRegistry.TableName)
 	return q

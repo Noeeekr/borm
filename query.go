@@ -6,11 +6,6 @@ import (
 	"strings"
 )
 
-// Used internally to identify if a chain already has one of these
-const INTERNAL_WHERE_ID = "where"
-const INTERNAL_SET_ID = "set"
-const INTERNAL_ORDER_ID = "id"
-
 type QueryRowsScanner func(rows *sql.Rows, throErrorOnFound bool) *Error
 
 type Query struct {
@@ -41,6 +36,12 @@ type InnerJoinQuery Query
 type InnerJoiner interface {
 	On(fieldA, fieldB string) *Query
 }
+
+// Used internally to identify if a chain already has one of these
+const INTERNAL_WHERE_ID = "where"
+const INTERNAL_SET_ID = "set"
+const INTERNAL_ORDER_ID = "id"
+const INTERNAL_JOIN_ID = "join"
 
 const FIELD_PARSER_PLACEHOLDER = "$$$"
 
@@ -90,7 +91,6 @@ func (q *Query) Values(values ...any) *Query {
 	}
 
 	// Create a postgres value placeholder
-
 	fields := make([]string, valueAmount/q.requiredValueLength)
 	for i := range fields {
 		fieldValues := make([]string, q.requiredValueLength)
@@ -190,6 +190,19 @@ func (q *Query) As(alias string) *Query {
 	if q.Error != nil {
 		return q
 	}
+
+aliasChecker:
+	for i, field := range q.fields {
+		for _, char := range field {
+			if char == '.' {
+				continue aliasChecker
+			}
+		}
+		q.fields[i] = fmt.Sprintf("%s.%s", alias, field)
+	}
+	q.tableAliases[alias] = q.tableAliases[""]
+	delete(q.tableAliases, "")
+
 	q.Query += fmt.Sprintf("AS %s ", alias)
 	return q
 }
@@ -197,6 +210,7 @@ func (q *Query) InnerJoin(r *TableRegistry, alias string) *InnerJoinQuery {
 	if q.Error != nil {
 		return (*InnerJoinQuery)(q)
 	}
+	q.RegisterID(INTERNAL_JOIN_ID)
 	q.tableAliases[alias] = r
 	q.Query += fmt.Sprintf("INNER JOIN %s AS %s ", r.TableName, alias)
 	return (*InnerJoinQuery)(q)
@@ -227,14 +241,24 @@ func (q *Query) validateFields() *Error {
 	for _, fieldName := range q.fields {
 		var table *TableRegistry = q.TableRegistry
 
+		// alias, fieldname
 		alias, after, found := strings.Cut(fieldName, ".")
 		if found {
+			// For join conditions or SELECT() with aliases
 			table = q.tableAliases[alias]
 			fieldName = after
+		} else {
+			// For SELECT() without aliases
+			table = q.tableAliases[""]
+			fieldName = alias
+		}
+		if table == nil {
+			return NewError(fmt.Sprintf("Failed to resolve field [%s]. Perhaps an missing alias", fieldName)).
+				Status(ErrSyntax)
 		}
 		_, exists := table.Fields[TableColumnName(fieldName)]
 		if !exists {
-			return NewError(fmt.Sprintf("%s does not exist in %s", fieldName, q.TableRegistry.TableName)).
+			return NewError(fmt.Sprintf("%s does not exist in %s", fieldName, table.TableName)).
 				Status(ErrSyntax)
 		}
 		fields = append(fields, string(fieldName))

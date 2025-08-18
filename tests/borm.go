@@ -153,17 +153,29 @@ func main() {
 
 	var notifications []*Notifications
 	err = development.Do(TABLE_USERS.
-		Select("u", "n.id", "n.title", "n.description").
+		Select("n.id", "n.title", "n.description").As("u").
 		InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id").
 		InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id").
-		Where("email", "noeeekr@gmail.com").
-		OrderAscending("n.id").OrderDescending("n.id").
+		Where("u.email", "noeeekr@gmail.com").
+		OrderAscending("n.id").
 		Scanner(scanNotifications(&notifications)),
 	)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	var userAmountFound int
+	err = development.Do(TABLE_USERS.
+		Select("id", "email", "name").
+		Where("email", "noeeekr@gmail.com").
+		OrderAscending("id").
+		Scanner(RowAmount(&userAmountFound)),
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
 	fmt.Println("[Issuer ID Returned From Insert]: ", user1Id)
 	fmt.Println("[Notification Rows found]: ", len(notifications))
 	for _, notification := range notifications {

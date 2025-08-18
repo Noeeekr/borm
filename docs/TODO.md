@@ -19,3 +19,5 @@
 
 ### Documentation
 1. Comments specifying which errors each function sends
+
+------------
