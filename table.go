@@ -108,7 +108,7 @@ func (m *TableRegistry) Select(alias string, fieldsName ...string) *Query {
 	if q.Error != nil {
 		return q
 	}
-	q.tables[alias] = m
+	q.tableAliases[alias] = m
 	q.fields = append(q.fields, fieldsName...)
 
 	q.typ = SELECT

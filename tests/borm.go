@@ -151,25 +151,24 @@ func main() {
 		return
 	}
 
-	transaction, err = development.StartTx()
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	var rowAmount int
-	err = transaction.Do(TABLE_USERS.
-		Select("u", "u.id", "n.id").
+	var notifications []*Notifications
+	err = development.Do(TABLE_USERS.
+		Select("u", "n.id", "n.title", "n.description").
 		InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id").
 		InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id").
 		Where("email", "noeeekr@gmail.com").
-		Scanner(RowAmount(&rowAmount)),
+		OrderAscending("n.id").OrderDescending("n.id").
+		Scanner(scanNotifications(&notifications)),
 	)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println("[Issuer ID][Insert]: ", user1Id)
-	fmt.Println("[Notification Rows found]: ", rowAmount)
+	fmt.Println("[Issuer ID Returned From Insert]: ", user1Id)
+	fmt.Println("[Notification Rows found]: ", len(notifications))
+	for _, notification := range notifications {
+		fmt.Println("	[Notification ID]: ", notification.Id)
+	}
 }
 
 func scanInt(i *int) borm.QueryRowsScanner {
@@ -186,6 +185,21 @@ func scanInt(i *int) borm.QueryRowsScanner {
 	}
 }
 
+func scanNotifications(n *[]*Notifications) borm.QueryRowsScanner {
+	return func(rows *sql.Rows, throErrorOnFound bool) *borm.Error {
+		defer rows.Close()
+
+		for rows.Next() {
+			notification := &Notifications{}
+			rows.Scan(&notification.Id, &notification.Title, &notification.Description)
+			*n = append(*n, notification)
+		}
+		if rows.Err() == nil {
+			return nil
+		}
+		return borm.NewError(rows.Err().Error()).Status(borm.ErrUnexpected)
+	}
+}
 func RowAmount(i *int) borm.QueryRowsScanner {
 	return func(rows *sql.Rows, throwErrorOnFound bool) *borm.Error {
 		defer rows.Close()

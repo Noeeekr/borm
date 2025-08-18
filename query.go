@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+// Used internally to identify if a chain already has one of these
+const INTERNAL_WHERE_ID = "where"
+const INTERNAL_SET_ID = "set"
+const INTERNAL_ORDER_ID = "id"
+
 type QueryRowsScanner func(rows *sql.Rows, throErrorOnFound bool) *Error
 
 type Query struct {
@@ -14,21 +19,24 @@ type Query struct {
 	CurrentValues       []any
 	placeholderIndex    int
 
-	hasWhere bool
-	hasSet   bool
-
 	// For build
 	Query         string
 	TableRegistry *TableRegistry
 	Error         *Error
+	RegisteredIds map[string]bool
 
-	// For joins
-	tables map[string]*TableRegistry
+	// map[alias]table
+	tableAliases map[string]*TableRegistry
+	// string [alias].[fieldname]
 	fields []string
 
 	RowsScanner      QueryRowsScanner
 	throErrorOnFound bool
 }
+type OrderChain struct {
+	*Query
+}
+
 type InnerJoinQuery Query
 type InnerJoiner interface {
 	On(fieldA, fieldB string) *Query
@@ -43,7 +51,10 @@ func (q *Query) Scan(rows *sql.Rows) *Error {
 	return q.RowsScanner(rows, q.throErrorOnFound)
 }
 
-// Defines a function to handle returned rows. If no function is passed at all then it doesn't query the returned rows.
+// Scanner expects a function that handles the rows returned by the query.
+// If no scanner is present then rows are not scanned.
+//
+// Scanner throws [type Error ErrNotFound] unless [func ThrowErrorOnFound] is called on this method, in this case it throws an [type Error ErrFound] on the first rows found.
 func (q *Query) Scanner(fun QueryRowsScanner) *Query {
 	q.RowsScanner = fun
 	return q
@@ -104,10 +115,10 @@ func (q *Query) Set(field string, value any) *Query {
 	}
 	q.fields = append(q.fields, field)
 
-	if q.hasSet {
+	if q.HasRegisteredID(INTERNAL_SET_ID) {
 		q.Query += ", "
 	} else {
-		q.hasSet = true
+		q.RegisterID(INTERNAL_SET_ID)
 		q.Query += "SET "
 	}
 
@@ -115,6 +126,13 @@ func (q *Query) Set(field string, value any) *Query {
 	q.placeholderIndex++
 	q.CurrentValues = append(q.CurrentValues, value)
 	return q
+}
+func (q *Query) RegisterID(id string) {
+	q.RegisteredIds[id] = true
+}
+func (q *Query) HasRegisteredID(id string) bool {
+	_, found := q.RegisteredIds[id]
+	return found
 }
 func (q *Query) Where(fieldName string, fieldValue any) *Query {
 	if q.Error != nil {
@@ -124,19 +142,54 @@ func (q *Query) Where(fieldName string, fieldValue any) *Query {
 		q.Error = NewError("Must be INSERT | UPDATE | DELETE").Status(ErrInvalidMethodChain)
 		return q
 	}
-	q.fields = append(q.fields, fieldName)
+	q.registerForValidation(fieldName)
 
-	if q.hasWhere {
+	if q.HasRegisteredID(INTERNAL_WHERE_ID) {
 		q.Query += "AND "
 	} else {
 		q.Query += "WHERE "
-		q.hasWhere = true
+		q.RegisterID(INTERNAL_WHERE_ID)
 	}
 
 	q.Query += fmt.Sprintf("%s = $%d ", fieldName, q.placeholderIndex)
 	q.placeholderIndex++
 	q.CurrentValues = append(q.CurrentValues, fieldValue)
 	return q
+}
+func (q *Query) OrderAscending(fieldName string) *Query {
+	if q.Error != nil {
+		return q
+	}
+
+	q.registerForValidation(fieldName)
+	if q.HasRegisteredID(INTERNAL_ORDER_ID) {
+		q.Query += fmt.Sprintf(", %s ASC", fieldName)
+	} else {
+		q.RegisterID(INTERNAL_ORDER_ID)
+		q.Query += fmt.Sprintf("ORDER BY %s ASC ", fieldName)
+	}
+
+	return q
+}
+func (q *Query) OrderDescending(fieldName string) *Query {
+	if q.Error != nil {
+		return q
+	}
+
+	q.registerForValidation(fieldName)
+	if q.HasRegisteredID(INTERNAL_ORDER_ID) {
+		q.Query += fmt.Sprintf(", %s DESC", fieldName)
+	} else {
+		q.RegisterID(INTERNAL_ORDER_ID)
+		q.Query += fmt.Sprintf("ORDER BY %s DESC ", fieldName)
+	}
+
+	return q
+}
+func (o *OrderChain) ThenOrderBy(fieldName string) *Query {
+	o.registerForValidation(fieldName)
+	o.Query.Query += fmt.Sprintf(", %s ", fieldName)
+	return o.Query
 }
 func (q *Query) As(alias string) *Query {
 	if q.Error != nil {
@@ -149,7 +202,7 @@ func (q *Query) InnerJoin(r *TableRegistry, alias string) *InnerJoinQuery {
 	if q.Error != nil {
 		return (*InnerJoinQuery)(q)
 	}
-	q.tables[alias] = r
+	q.tableAliases[alias] = r
 	q.Query += fmt.Sprintf("INNER JOIN %s AS %s ", r.TableName, alias)
 	return (*InnerJoinQuery)(q)
 }
@@ -181,7 +234,7 @@ func (q *Query) validateFields() *Error {
 
 		alias, after, found := strings.Cut(fieldName, ".")
 		if found {
-			table = q.tables[alias]
+			table = q.tableAliases[alias]
 			fieldName = after
 		}
 		_, exists := table.Fields[TableColumnName(fieldName)]
@@ -192,6 +245,9 @@ func (q *Query) validateFields() *Error {
 		fields = append(fields, string(fieldName))
 	}
 	return nil
+}
+func (q *Query) registerForValidation(fieldNames ...string) {
+	q.fields = append(q.fields, fieldNames...)
 }
 func newQueryOnTable(t *TableRegistry) *Query {
 	var q Query
@@ -206,6 +262,7 @@ func newQueryOnTable(t *TableRegistry) *Query {
 	}
 	q.TableRegistry = table
 	q.placeholderIndex = 1
-	q.tables = make(map[string]*TableRegistry)
+	q.tableAliases = make(map[string]*TableRegistry)
+	q.RegisteredIds = make(map[string]bool)
 	return &q
 }
