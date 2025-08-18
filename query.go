@@ -186,11 +186,6 @@ func (q *Query) OrderDescending(fieldName string) *Query {
 
 	return q
 }
-func (o *OrderChain) ThenOrderBy(fieldName string) *Query {
-	o.registerForValidation(fieldName)
-	o.Query.Query += fmt.Sprintf(", %s ", fieldName)
-	return o.Query
-}
 func (q *Query) As(alias string) *Query {
 	if q.Error != nil {
 		return q
