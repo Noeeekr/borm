@@ -118,6 +118,7 @@ func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) *Error {
 	r.RegistorCache[string(table.TableName)] = true
 
 	query := parseCreateTableQuery(table)
+	fmt.Println(query.Query)
 	return t.Do(query)
 }
 func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) *Error {

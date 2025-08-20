@@ -269,14 +269,18 @@ func parseFields(typ reflect.Type) map[TableColumnName]*TableColumns {
 	tagParser := NewTagValues()
 	for i := range typ.NumField() {
 		field := typ.Field(i)
-		if field.Anonymous && field.Type.Kind() == reflect.Struct {
-			subfields := parseFields(field.Type)
+		typ := field.Type
+		if typ.Kind() == reflect.Pointer {
+			typ = typ.Elem()
+		}
+		if field.Anonymous && typ.Kind() == reflect.Struct {
+			subfields := parseFields(typ)
 			maps.Copy(fields, subfields)
 			continue
 		}
 		fieldInformation := &TableColumns{}
 		fieldInformation.Name = TableColumnName(strings.ToLower(field.Name))
-		fieldInformation.Type = parseFieldType(field.Type.Name())
+		fieldInformation.Type = parseFieldType(typ.Name())
 		tableField := tagParser.Override(fieldInformation).ParseRaw(string(field.Tag.Get("borm")))
 		fields[tableField.Name] = tableField
 	}
