@@ -8,8 +8,9 @@ import (
 
 type QueryRowsScanner func(rows *sql.Rows, throErrorOnFound bool) *Error
 
+type QueryType int
 type Query struct {
-	typ                 TablePrivilege
+	typ                 QueryType
 	requiredValueLength int
 	CurrentValues       []any
 	placeholderIndex    int
@@ -45,8 +46,9 @@ const INTERNAL_JOIN_ID = "join"
 
 const FIELD_PARSER_PLACEHOLDER = "$$$"
 
-func NewQuery(q string) *Query {
-	return &Query{Query: q}
+// Unsafe Queries are not stable to use methods are may panic
+func NewUnsafeQuery(typ QueryType, q string) *Query {
+	return &Query{typ: typ, Query: q}
 }
 func (q *Query) Scan(rows *sql.Rows) *Error {
 	return q.RowsScanner(rows, q.throErrorOnFound)

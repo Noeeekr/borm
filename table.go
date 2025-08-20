@@ -14,17 +14,18 @@ const TAG_R_TRIM_QNT int = 1
 const TAG_FIELDS_SEPARATOR string = ") ("
 
 const (
-	SELECT TablePrivilege = iota
+	SELECT QueryType = iota
 	UPDATE
 	DELETE
 	INSERT
+
+	CREATE
 	DROP
 
 	ALL
 )
 
 type TableName string
-type TablePrivilege int
 type TableRegistry struct {
 	TableName TableName
 	Fields    map[TableColumnName]*TableColumns
