@@ -43,7 +43,11 @@ func (t *Transaction) Do(query *Query) *Error {
 
 	stmt, err := t.tx.Prepare(query.Query)
 	if err != nil {
-		return NewError(err.Error()).Status(ErrSyntax)
+		err := NewError(err.Error()).Status(ErrSyntax)
+		if Settings().Environment().GetEnvironment() == DEBUGGING {
+			err.Append("\n[Query]: " + query.Query)
+		}
+		return err
 	}
 
 	if query.RowsScanner != nil {
