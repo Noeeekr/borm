@@ -69,7 +69,7 @@ func (r *Commiter) migrateTables(t *Transaction) *Error {
 func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) *Error {
 	var exists bool
 	existsQuery := NewQuery("SELECT tablename FROM pg_catalog.pg_tables WHERE tablename = $1").
-		Scanner(CheckExist(&exists))
+		Scanner(ScannerFindOne(&exists))
 	existsQuery.CurrentValues = append(existsQuery.CurrentValues, table.TableName)
 	err := t.Do(existsQuery)
 	if err != nil {
@@ -122,10 +122,13 @@ func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) *Error {
 }
 func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) *Error {
 	var exists bool
-
-	NewQuery("SELECT typtype FROM pg_catalog.pg_type WHERE typtype = 'e' AND typname = $1").
+	query := NewQuery("SELECT typtype FROM pg_catalog.pg_type WHERE typtype = 'e' AND typname = $1").
 		Values(enum.Name).
-		Scanner(CheckExist(&exists))
+		Scanner(ScannerFindOne(&exists))
+
+	if err := t.Do(query); err != nil {
+		return err
+	}
 
 	configuration := configuration.Settings().Migrations()
 	if exists && configuration.Ignore {

@@ -143,7 +143,7 @@ func (m *TableRegistry) Delete() *Query {
 }
 
 // Breaks the borm tag of a field and parses its values into query parts
-type FieldTags struct {
+type ColumnTagReader struct {
 	// Used by Override() to set a TableColumns to recieve the values if present
 	mockValues *TableColumns
 }
@@ -153,8 +153,8 @@ type Tag struct {
 	values     map[TableColumnName][]string
 }
 
-func NewTagValues() *FieldTags {
-	return &FieldTags{
+func newColumnTagReader() *ColumnTagReader {
+	return &ColumnTagReader{
 		mockValues: nil,
 	}
 }
@@ -165,11 +165,11 @@ func NewTag() *Tag {
 		values:     map[TableColumnName][]string{},
 	}
 }
-func (m *FieldTags) Override(f *TableColumns) *FieldTags {
+func (m *ColumnTagReader) WriteTo(f *TableColumns) *ColumnTagReader {
 	m.mockValues = f
 	return m
 }
-func (m *FieldTags) NewTagValues(tag string) *Tag {
+func (m *ColumnTagReader) NewTagValues(tag string) *Tag {
 	var tagFields []string
 	if tag != "" {
 		tagFields = strings.Split(tag[TAG_L_TRIM_QNT:len(tag)-TAG_R_TRIM_QNT], TAG_FIELDS_SEPARATOR)
@@ -198,8 +198,8 @@ func (m *FieldTags) NewTagValues(tag string) *Tag {
 
 	return fieldTag
 }
-func (m *FieldTags) ParseRaw(tag string) *TableColumns {
-	tagValues := m.NewTagValues(tag)
+func (m *ColumnTagReader) ReadFrom(f reflect.StructField) *TableColumns {
+	tagValues := m.NewTagValues(f.Tag.Get("borm"))
 	tagValues.FillWith(m.mockValues)
 
 	field := &TableColumns{}
@@ -264,25 +264,33 @@ func parseFieldType(typname string) string {
 	}
 }
 func parseFields(typ reflect.Type) map[TableColumnName]*TableColumns {
-	fields := map[TableColumnName]*TableColumns{}
+	columns := map[TableColumnName]*TableColumns{}
 
-	tagParser := NewTagValues()
+	columnTagReader := newColumnTagReader()
 	for i := range typ.NumField() {
 		field := typ.Field(i)
 		typ := field.Type
 		if typ.Kind() == reflect.Pointer {
 			typ = typ.Elem()
 		}
+		// Copy the embedded struct fields
 		if field.Anonymous && typ.Kind() == reflect.Struct {
-			subfields := parseFields(typ)
-			maps.Copy(fields, subfields)
+			maps.Copy(columns, parseFields(typ))
 			continue
 		}
-		fieldInformation := &TableColumns{}
-		fieldInformation.Name = TableColumnName(strings.ToLower(field.Name))
-		fieldInformation.Type = parseFieldType(typ.Name())
-		tableField := tagParser.Override(fieldInformation).ParseRaw(string(field.Tag.Get("borm")))
-		fields[tableField.Name] = tableField
+		columnName := strings.ToLower(field.Name)
+		columnType := parseFieldType(typ.Name())
+		column := columnTagReader.
+			WriteTo(newTableColumns(columnName, columnType)).
+			ReadFrom(field)
+
+		columns[column.Name] = column
 	}
-	return fields
+	return columns
+}
+func newTableColumns(name string, typ string) *TableColumns {
+	return &TableColumns{
+		Name: TableColumnName(name),
+		Type: typ,
+	}
 }

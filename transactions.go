@@ -92,11 +92,11 @@ func (t *Transaction) rollback() *Error {
 	return nil
 }
 
-// CheckExist is a Scanner helper function that checks if at least one row exist and scans the result to a boolean.
-var CheckExist = func(exists *bool) QueryRowsScanner {
+// ScannerFindOne is a scanner helper function. Returns true if at least one row is returned. Doesn't throw ErrNotFound. Instead returns false.
+var ScannerFindOne = func(exists *bool) QueryRowsScanner {
 	return func(rows *sql.Rows, throErrorOnFound bool) *Error {
+		defer rows.Close()
 		*exists = rows.Next()
-		rows.Close()
 		return nil
 	}
 }
