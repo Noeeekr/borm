@@ -142,7 +142,7 @@ func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) *Error {
 	return t.Do(parseCreateEnumQuery(enum))
 }
 func (r *Commiter) dropEnum(t *Transaction, enum *Enum) *Error {
-	query := NewUnsafeQuery(DROP, fmt.Sprintf("DROP TYPE %s", enum.Name))
+	query := NewUnsafeQuery(DROP, fmt.Sprintf("DROP TYPE %s CASCADE", enum.Name))
 	return t.Do(query)
 }
 func (r *Commiter) dropTables(t *Transaction, tables ...*TableRegistry) *Error {
