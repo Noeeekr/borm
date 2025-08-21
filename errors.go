@@ -1,6 +1,7 @@
 package borm
 
 import (
+	"errors"
 	"fmt"
 	"runtime/debug"
 
@@ -81,4 +82,8 @@ func (e *Error) Join(e2 *Error) *Error {
 	}
 	e.Joins = append(e.Joins, e2)
 	return e
+}
+
+func (e *Error) Error() error {
+	return errors.New(e.String())
 }
