@@ -155,19 +155,23 @@ func (r *Commiter) dropTables(t *Transaction, tables ...*TableRegistry) *Error {
 	return nil
 }
 func parseCreateTableQuery(table *TableRegistry) *Query {
-	var fields []string
+	var fieldStatements []string
 	for _, field := range table.Fields {
-		query := fmt.Sprintf("\n\t%s %s", field.Name, field.Type)
+		if field.Ignore {
+			fmt.Println("IGNORED FILED")
+			continue
+		}
+		statement := fmt.Sprintf("\n\t%s %s", field.Name, field.Type)
 		if field.Constraints != "" {
-			query += fmt.Sprintf(" %s", field.Constraints)
+			statement += fmt.Sprintf(" %s", field.Constraints)
 		}
 		if field.ForeignKey != "" {
-			query += fmt.Sprintf(",%s", field.ForeignKey)
+			statement += fmt.Sprintf(",%s", field.ForeignKey)
 		}
-		fields = append(fields, query)
+		fieldStatements = append(fieldStatements, statement)
 	}
 
-	return NewUnsafeQuery(CREATE, fmt.Sprintf("CREATE TABLE %s (%s\n);", table.TableName, strings.Join(fields, ",")))
+	return NewUnsafeQuery(CREATE, fmt.Sprintf("CREATE TABLE %s (%s\n);", table.TableName, strings.Join(fieldStatements, ",")))
 }
 func parseCreateEnumQuery(enum *Enum) *Query {
 	values := enum.GetValues()

@@ -7,7 +7,7 @@ import (
 type UserMethods interface {
 	// PrivilegedTables() []*Table
 	// GrantPrivileges(*Table, ...TablePrivilege) *UserPrivilegeRequest
-	ToColumns(...TableColumnName) *User
+	ToColumns(...TableFieldName) *User
 	Password() string
 }
 type User struct {

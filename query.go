@@ -258,7 +258,7 @@ func (q *Query) validateFields() *Error {
 			return NewError(fmt.Sprintf("Failed to resolve field [%s]. Perhaps an missing alias", fieldName)).
 				Status(ErrSyntax)
 		}
-		_, exists := table.Fields[TableColumnName(fieldName)]
+		_, exists := table.Fields[TableFieldName(fieldName)]
 		if !exists {
 			return NewError(fmt.Sprintf("%s does not exist in %s", fieldName, table.TableName)).
 				Status(ErrSyntax)

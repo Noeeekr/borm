@@ -33,10 +33,12 @@ type Users struct {
 	CreatedAt time.Time `borm:"(NAME, created_at)"`
 }
 type Notifications struct {
-	Id          int `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
-	IssuerId    int `borm:"(NAME, issuer_id) (FOREIGN KEY, USERS, ID)"`
-	Title       string
+	Id          int    `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
+	IssuerId    int    `borm:"(NAME, issuer_id) (FOREIGN KEY, USERS, ID)"`
+	Title       string `borm:"(CONSTRAINTS, DEFAULT 'empty title')"`
 	Description string
+
+	ThisFieldShouldNotExist int `borm:"(IGNORE)"`
 }
 type UsersNotifications struct {
 	UserId         int `borm:"(NAME, user_id) (FOREIGN KEY, USERS, ID)"`
@@ -112,8 +114,8 @@ func main() {
 	}
 	var notificationId int
 	err = transaction.Do(TABLE_NOTIFICATIONS.
-		Insert("issuer_id", "title", "description").
-		Values(user1Id, "test notification title", "test notification description").
+		Insert("issuer_id", "description").
+		Values(user1Id, "test notification description").
 		Returning("id").Scanner(scanInt(&notificationId)),
 	)
 	if err != nil {

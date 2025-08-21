@@ -5,13 +5,7 @@ import (
 	"maps"
 	"reflect"
 	"strings"
-	"time"
 )
-
-// Used internally to split borm tag fields
-const TAG_L_TRIM_QNT int = 1
-const TAG_R_TRIM_QNT int = 1
-const TAG_FIELDS_SEPARATOR string = ") ("
 
 const (
 	SELECT QueryType = iota
@@ -28,7 +22,7 @@ const (
 type TableName string
 type TableRegistry struct {
 	TableName TableName
-	Fields    map[TableColumnName]*TableColumns
+	Fields    map[TableFieldName]*TableFieldValues
 	Error     *Error
 
 	RequiredTypes  []TypMethods
@@ -37,18 +31,19 @@ type TableRegistry struct {
 	databaseCache *TablesCache
 }
 
-type TableColumnName string
-type TableColumns struct {
-	Name        TableColumnName
+type TableFieldName string
+type TableFieldValues struct {
+	Name        TableFieldName
 	Type        string
 	Constraints string
 	ForeignKey  string
+	Ignore      bool
 }
 
 func NewTableRegistry(name string) *TableRegistry {
 	return &TableRegistry{
 		TableName: TableName(strings.ToLower(name)),
-		Fields:    make(map[TableColumnName]*TableColumns),
+		Fields:    make(map[TableFieldName]*TableFieldValues),
 	}
 }
 
@@ -143,155 +138,34 @@ func (m *TableRegistry) Delete() *Query {
 	return q
 }
 
-// Breaks the borm tag of a field and parses its values into query parts
-type ColumnTagReader struct {
-	// Used by Override() to set a TableColumns to recieve the values if present
-	mockValues *TableColumns
-}
+func parseFields(typ reflect.Type) map[TableFieldName]*TableFieldValues {
+	fields := map[TableFieldName]*TableFieldValues{}
 
-type Tag struct {
-	mockValues *TableColumns
-	values     map[TableColumnName][]string
-}
-
-func newColumnTagReader() *ColumnTagReader {
-	return &ColumnTagReader{
-		mockValues: nil,
-	}
-}
-
-func NewTag() *Tag {
-	return &Tag{
-		mockValues: &TableColumns{},
-		values:     map[TableColumnName][]string{},
-	}
-}
-func (m *ColumnTagReader) WriteTo(f *TableColumns) *ColumnTagReader {
-	m.mockValues = f
-	return m
-}
-func (m *ColumnTagReader) NewTagValues(tag string) *Tag {
-	var tagFields []string
-	if tag != "" {
-		tagFields = strings.Split(tag[TAG_L_TRIM_QNT:len(tag)-TAG_R_TRIM_QNT], TAG_FIELDS_SEPARATOR)
-	}
-
-	// Trim tag whitespaces
-	for index := range tagFields {
-		tagFields[index] = strings.TrimSpace(tagFields[index])
-	}
-
-	// Separate tag fields into keys and values
-	fieldTag := NewTag()
-	for _, Tablefield := range tagFields {
-		TablefieldValues := strings.Split(Tablefield, ",")
-		if len(TablefieldValues) < 2 {
-			continue
-		}
-		// Trim field whitespaces
-		for i, value := range TablefieldValues {
-			TablefieldValues[i] = strings.ToLower(strings.TrimSpace(value))
-		}
-		fieldName := TableColumnName(strings.ToUpper(TablefieldValues[0]))
-		fieldValues := TablefieldValues[1:]
-		fieldTag.values[fieldName] = fieldValues
-	}
-
-	return fieldTag
-}
-func (m *ColumnTagReader) ReadFrom(f reflect.StructField) *TableColumns {
-	tagValues := m.NewTagValues(f.Tag.Get("borm"))
-	tagValues.FillWith(m.mockValues)
-
-	field := &TableColumns{}
-	field.Name = tagValues.parseName()
-	field.Type = tagValues.parseType()
-	field.Constraints = tagValues.parseConstraints()
-	field.ForeignKey = tagValues.parseForeignKey(field.Name)
-
-	return field
-}
-
-func (t *Tag) FillWith(tf *TableColumns) {
-	t.mockValues = tf
-}
-
-func (t *Tag) parseName() TableColumnName {
-	if values := t.values["NAME"]; len(values) > 0 {
-		return TableColumnName(values[0])
-	}
-	return t.mockValues.Name
-}
-func (t *Tag) parseType() string {
-	if values := t.values["TYPE"]; len(values) > 0 {
-		return values[0]
-	}
-	return t.mockValues.Type
-}
-func (t *Tag) parseConstraints() string {
-	values := t.values["CONSTRAINTS"]
-	return strings.Join(values, " ")
-}
-func (t *Tag) parseForeignKey(f TableColumnName) string {
-	values := t.values["FOREIGN KEY"]
-	if len(values) < 2 {
-		return ""
-	}
-
-	var foreignKey string = fmt.Sprintf("\n\tFOREIGN KEY (%s)\n\tREFERENCES %s (%s)", f, values[0], values[1])
-
-	values = t.values["UPDATE"]
-	if len(values) > 0 {
-		foreignKey += fmt.Sprintf("\n\tON UPDATE %s", strings.ToUpper(values[0]))
-	}
-
-	values = t.values["DELETE"]
-	if len(values) > 0 {
-		foreignKey += fmt.Sprintf("\n\tON DELETE %s", strings.ToUpper(values[0]))
-	}
-
-	return foreignKey
-}
-func parseFieldType(typname string) string {
-	switch typname {
-	case reflect.TypeFor[string]().Name():
-		return "VARCHAR(256)"
-	case reflect.TypeFor[int]().Name():
-		return "INTEGER"
-	case reflect.TypeFor[time.Time]().Name():
-		return "TIMESTAMPTZ"
-	default:
-		return strings.ToLower(typname)
-	}
-}
-func parseFields(typ reflect.Type) map[TableColumnName]*TableColumns {
-	columns := map[TableColumnName]*TableColumns{}
-
-	columnTagReader := newColumnTagReader()
+	tagReader := newTagReader()
 	for i := range typ.NumField() {
-		field := typ.Field(i)
-		typ := field.Type
+		structField := typ.Field(i)
+		typ := structField.Type
 		if typ.Kind() == reflect.Pointer {
 			typ = typ.Elem()
 		}
 		// Copy the embedded struct fields
-		if field.Anonymous && typ.Kind() == reflect.Struct {
-			maps.Copy(columns, parseFields(typ))
+		if structField.Anonymous && typ.Kind() == reflect.Struct {
+			maps.Copy(fields, parseFields(typ))
 			continue
 		}
-		columnName := strings.ToLower(field.Name)
-		columnType := parseFieldType(typ.Name())
-		column := columnTagReader.
-			WriteTo(newTableColumns(columnName, columnType)).
-			ReadFrom(field)
+		fieldName := TableFieldName(strings.ToLower(structField.Name))
+		fieldType := parseFieldType(typ.Name())
+		field := tagReader.
+			Override(newTableFieldValues(fieldName, fieldType)).
+			Read(structField)
 
-		columns[column.Name] = column
+		fields[field.Name] = field
 	}
-	return columns
+	return fields
 }
-func newTableColumns(name string, typ string) *TableColumns {
-	return &TableColumns{
-		Name: TableColumnName(name),
+func newTableFieldValues(name TableFieldName, typ string) *TableFieldValues {
+	return &TableFieldValues{
+		Name: name,
 		Type: typ,
 	}
 }
