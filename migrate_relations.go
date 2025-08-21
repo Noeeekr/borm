@@ -158,7 +158,6 @@ func parseCreateTableQuery(table *TableRegistry) *Query {
 	var fieldStatements []string
 	for _, field := range table.Fields {
 		if field.Ignore {
-			fmt.Println("IGNORED FILED")
 			continue
 		}
 		statement := fmt.Sprintf("\n\t%s %s", field.Name, field.Type)

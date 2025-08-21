@@ -27,6 +27,11 @@ type Users struct {
 	Email    string   `borm:"(CONSTRAINTS, NOT NULL, UNIQUE)"`
 	Password string   `borm:"(CONSTRAINTS, NOT NULL)"`
 	Role     UserRole `borm:"(CONSTRAINTS, NOT NULL) (TYPE, user_role)"`
+	// borm:"TYPE<serial> NAME<issuer_id> CONSTRAINTS<ignore, not null, unique, default 'abcd'> "
+	// borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"
+	// borm:"type is serial, constraints are primary key and not null and default 'abcd', name is issuer_id"
+	// borm:"type:serial, constraints:primary key, not null, default 'abcd', name:issuer_id"
+	// borm:"type(serial) constraints(primary key, not null, default 'abcd') name(issuer_id)"
 
 	DeletedAt time.Time `borm:"(NAME, deleted_at)"`
 	UpdatedAt time.Time `borm:"(NAME, updated_at)"`
