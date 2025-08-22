@@ -71,8 +71,17 @@ func (t *Transaction) query(stmt *sql.Stmt, query *Query) error {
 		return ErrorJoin(ErrorDescription(ErrFailedTransaction, err.Error()), t.rollback())
 	}
 
-	if err := query.Scan(rows); t != nil {
+	found, err := query.Scan(rows)
+	if err != nil {
 		return err
+	}
+	// Found, Throw Error On Found
+	if found && query.throwErrorOnFound {
+		return ErrorDescription(ErrFound, "Rows found")
+	}
+	// Not Found, Default Throw Error On Not Found
+	if !found && !query.throwErrorOnFound {
+		return ErrorDescription(ErrNotFound, "No rows found")
 	}
 
 	return nil
@@ -93,11 +102,11 @@ func (t *Transaction) rollback() error {
 	return nil
 }
 
-// ScannerFindOne is a scanner helper function. Returns true if at least one row is returned. Doesn't throw ErrNotFound. Instead returns false.
-var ScannerFindOne = func(exists *bool) QueryRowsScanner {
-	return func(rows *sql.Rows, throErrorOnFound bool) error {
+// ScannerFindOne is a scanner helper function. Returns true if at least one row is returned. Doesn't throw ErrNotFound or ErrFound. Instead returns false.
+var ScannerFindOne = func(exists *bool) ReturnScanner {
+	return func(rows *sql.Rows) (bool, error) {
 		defer rows.Close()
 		*exists = rows.Next()
-		return nil
+		return true, nil
 	}
 }

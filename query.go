@@ -6,7 +6,14 @@ import (
 	"strings"
 )
 
-type QueryRowsScanner func(rows *sql.Rows, throErrorOnFound bool) error
+// ReturnScanner is used by [type Query] Scanner() method,
+// it handles the scanning of the returned rows.
+//
+// On implementation, it must notify if rows were found on returning, the error can be nil.
+//
+// It will always prioritizes using the error if it exists.
+// Otherwise it throws a ErrNotFound if notified that no rows were found. This can be changed with ThrowErrorOnFound()
+type ReturnScanner func(rows *sql.Rows) (found bool, err error)
 
 type QueryType int
 type Query struct {
@@ -26,8 +33,8 @@ type Query struct {
 	// string [alias].[fieldname]
 	fields []string
 
-	RowsScanner      QueryRowsScanner
-	throErrorOnFound bool
+	RowsScanner       ReturnScanner
+	throwErrorOnFound bool
 }
 type OrderChain struct {
 	*Query
@@ -50,22 +57,22 @@ const FIELD_PARSER_PLACEHOLDER = "$$$"
 func NewUnsafeQuery(typ QueryType, q string) *Query {
 	return &Query{typ: typ, Query: q}
 }
-func (q *Query) Scan(rows *sql.Rows) error {
-	return q.RowsScanner(rows, q.throErrorOnFound)
+func (q *Query) Scan(rows *sql.Rows) (found bool, err error) {
+	return q.RowsScanner(rows)
 }
 
 // Scanner expects a function that handles the rows returned by the query.
 // If no scanner is present then rows are not scanned.
 //
 // Scanner throws [type Error ErrNotFound] unless [func ThrowErrorOnFound] is called on this method, in this case it throws an [type Error ErrFound] on the first rows found.
-func (q *Query) Scanner(fun QueryRowsScanner) *Query {
+func (q *Query) Scanner(fun ReturnScanner) *Query {
 	q.RowsScanner = fun
 	return q
 }
 
 // Switch to throw response error on found instead of not found..
 func (q *Query) ThrowErrorOnFound() *Query {
-	q.throErrorOnFound = true
+	q.throwErrorOnFound = true
 	return q
 }
 func (q *Query) SetError(e error) *Query {

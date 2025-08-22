@@ -46,7 +46,18 @@ func (m *TransactionFactory) Do(query *Query) error {
 	}
 
 	if query.RowsScanner != nil {
-		return query.Scan(rows)
+		found, err := query.Scan(rows)
+		if err != nil {
+			return err
+		}
+		// Found, Throw Error On Found
+		if found && query.throwErrorOnFound {
+			return ErrorDescription(ErrFound, "Rows found")
+		}
+		// Not Found, Default Throw Error On Not Found
+		if !found && !query.throwErrorOnFound {
+			return ErrorDescription(ErrNotFound, "No rows found")
+		}
 	}
 	return nil
 }

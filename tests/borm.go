@@ -190,41 +190,49 @@ func main() {
 	}
 }
 
-func scanInt(i *int) borm.QueryRowsScanner {
-	return func(rows *sql.Rows, throwErrorOnFound bool) error {
+func scanInt(i *int) borm.ReturnScanner {
+	return func(rows *sql.Rows) (bool, error) {
 		defer rows.Close()
+
 		if rows.Next() {
 			if err := rows.Scan(i); err != nil {
-				return borm.ErrorJoin(borm.ErrFailedOperation, err)
+				return false, err
 			}
 		} else {
-			return borm.ErrorDescription(borm.ErrNotFound, "No rows found")
+			return false, borm.ErrorDescription(borm.ErrNotFound, "No rows found")
 		}
-		return nil
+
+		return true, nil
 	}
 }
 
-func scanNotifications(n *[]*Notifications) borm.QueryRowsScanner {
-	return func(rows *sql.Rows, throErrorOnFound bool) error {
+func scanNotifications(n *[]*Notifications) borm.ReturnScanner {
+	return func(rows *sql.Rows) (bool, error) {
 		defer rows.Close()
 
+		var found bool = false
 		for rows.Next() {
 			notification := &Notifications{}
 			rows.Scan(&notification.Id, &notification.Title, &notification.Description)
 			*n = append(*n, notification)
+			found = true
 		}
-		if rows.Err() == nil {
-			return nil
+		if rows.Err() != nil {
+			return false, borm.ErrorDescription(borm.ErrUnexpected, rows.Err().Error())
 		}
-		return borm.ErrorDescription(borm.ErrUnexpected, rows.Err().Error())
+		return found, nil
 	}
 }
-func RowAmount(i *int) borm.QueryRowsScanner {
-	return func(rows *sql.Rows, throwErrorOnFound bool) error {
+
+func RowAmount(i *int) borm.ReturnScanner {
+	return func(rows *sql.Rows) (bool, error) {
 		defer rows.Close()
 		for rows.Next() {
 			*i++
 		}
-		return nil
+		if *i == 0 {
+			return false, nil
+		}
+		return true, nil
 	}
 }
