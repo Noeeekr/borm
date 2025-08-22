@@ -31,7 +31,7 @@ type Query struct {
 	// map[alias]table
 	tableAliases map[string]*TableRegistry
 	// string [alias].[fieldname]
-	fields []string
+	requestedFields []string
 
 	RowsScanner       ReturnScanner
 	throwErrorOnFound bool
@@ -120,7 +120,7 @@ func (q *Query) Set(field string, value any) *Query {
 		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT or UPDATE")
 		return q
 	}
-	q.fields = append(q.fields, field)
+	q.requestedFields = append(q.requestedFields, field)
 
 	if q.HasRegisteredID(INTERNAL_SET_ID) {
 		q.Query += ", "
@@ -198,15 +198,14 @@ func (q *Query) As(alias string) *Query {
 		return q
 	}
 
-aliasChecker:
-	for i, field := range q.fields {
-		for _, char := range field {
-			if char == '.' {
-				continue aliasChecker
-			}
+	// Insert the alias in all anonymous fields
+	for i, field := range q.requestedFields {
+		if !strings.Contains(field, ".") {
+			q.requestedFields[i] = fmt.Sprintf("%s.%s", alias, field)
 		}
-		q.fields[i] = fmt.Sprintf("%s.%s", alias, field)
 	}
+
+	// Moves the TableRegistry to the alias
 	q.tableAliases[alias] = q.tableAliases[""]
 	delete(q.tableAliases, "")
 
@@ -238,29 +237,29 @@ func (q *Query) Returning(fields ...string) *Query {
 		return q
 	}
 
-	q.fields = append(q.fields, fields...)
-	q.Query += fmt.Sprintf("RETURNING %s", strings.Join(fields, ", "))
+	q.requestedFields = append(q.requestedFields, fields...)
+	q.Query += fmt.Sprintf("RETURNING %s ", strings.Join(fields, ", "))
 	return q
 }
 
 func (q *Query) validateFields() error {
 	var fields []string
-	for _, fieldName := range q.fields {
+	for _, fieldName := range q.requestedFields {
 		var table *TableRegistry = q.TableRegistry
 
 		// alias, fieldname
 		alias, after, found := strings.Cut(fieldName, ".")
 		if found {
-			// For join conditions or SELECT() with aliases
+			// For join conditions or operations with aliases
 			table = q.tableAliases[alias]
 			fieldName = after
 		} else {
-			// For SELECT() without aliases
+			// For operations without aliases
 			table = q.tableAliases[""]
 			fieldName = alias
 		}
 		if table == nil {
-			return ErrorDescription(ErrSyntax, fmt.Sprintf("Failed to resolve field [%s]. Perhaps an missing alias", fieldName))
+			return ErrorDescription(ErrSyntax, fmt.Sprintf("Failed to resolve field [%s]. Perhaps a missing alias", fieldName))
 		}
 		_, exists := table.Fields[TableFieldName(fieldName)]
 		if !exists {
@@ -271,7 +270,7 @@ func (q *Query) validateFields() error {
 	return nil
 }
 func (q *Query) registerForValidation(fieldNames ...string) {
-	q.fields = append(q.fields, fieldNames...)
+	q.requestedFields = append(q.requestedFields, fieldNames...)
 }
 func newQueryOnTable(t *TableRegistry) *Query {
 	var q Query

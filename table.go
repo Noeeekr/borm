@@ -104,8 +104,10 @@ func (m *TableRegistry) Select(fieldsName ...string) *Query {
 	if q.Error != nil {
 		return q
 	}
+
+	// Maps the register of this table as anonymous alias until it gets an alias
 	q.tableAliases[""] = m
-	q.fields = append(q.fields, fieldsName...)
+	q.requestedFields = append(q.requestedFields, fieldsName...)
 
 	q.typ = SELECT
 	q.Query = fmt.Sprintf("SELECT %s ", strings.Join(fieldsName, ", "))
@@ -119,7 +121,7 @@ func (m *TableRegistry) Insert(fieldsName ...string) *Query {
 		return q
 	}
 	q.tableAliases[""] = m
-	q.fields = append(q.fields, fieldsName...)
+	q.requestedFields = append(q.requestedFields, fieldsName...)
 
 	q.typ = INSERT
 	q.requiredValueLength = len(fieldsName)
