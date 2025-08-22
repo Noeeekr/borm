@@ -3,87 +3,37 @@ package borm
 import (
 	"errors"
 	"fmt"
-	"runtime/debug"
-
-	"github.com/Noeeekr/borm/configuration"
+	"strings"
 )
 
-type Error struct {
-	Stat       ErrorStatus
-	Desc       string
-	Joins      []*Error
-	DebugStack string
-}
+var (
+	ErrConfiguration error = errors.New("Configuration Necessary")
 
-type ErrorStatus string
+	ErrInvalidMethodChain error = errors.New("Invalid method chaining")
+	ErrInvalidType        error = errors.New("Invalid type")
+	ErrSyntax             error = errors.New("Syntax error")
 
-const (
-	ErrConfiguration             ErrorStatus = "Configuration necessary"
-	ErrInvalidType               ErrorStatus = "Invalid type"
-	ErrFound                     ErrorStatus = "Found"
-	ErrNotFound                  ErrorStatus = "Not found"
-	ErrEmpty                     ErrorStatus = "Empty"
-	ErrSyntax                    ErrorStatus = "Syntax error"
-	ErrInvalidMethodChain        ErrorStatus = "Invalid method chaining"
-	ErrFailedOperation           ErrorStatus = "Failed operation"
-	ErrFailedTransaction         ErrorStatus = "Failed transaction"
-	ErrFailedTransactionStart    ErrorStatus = "Failed transaction start"
-	ErrFailedTransactionCommit   ErrorStatus = "Failed transaction commit"
-	ErrFailedTransactionRollback ErrorStatus = "Failed transaction rollback"
-	ErrBadConnection             ErrorStatus = "Bad connection"
-	ErrUnexpected                ErrorStatus = "Unexpected event"
+	ErrNotFound error = errors.New("Not found")
+	ErrFound    error = errors.New("Found")
+
+	ErrFailedOperation           error = errors.New("Failed operation")
+	ErrFailedTransaction         error = errors.New("Failed transaction")
+	ErrFailedTransactionStart    error = errors.New("Failed transaction start")
+	ErrFailedTransactionCommit   error = errors.New("Failed transaction commit")
+	ErrFailedTransactionRollback error = errors.New("Failed transaction rollback")
+
+	ErrBadConnection error = errors.New("Bad connection")
+	ErrUnexpected    error = errors.New("Unexpected")
 )
 
-func NewError(description string) *Error {
-	var debugStack string
-	if configuration.Settings().Environment().GetEnvironment() == configuration.DEBUGGING {
-		debugStack += "\n\n[Debugging Stack]: \n\n" + string(debug.Stack())
+func ErrorDescription(err error, messages ...string) error {
+	description := strings.Builder{}
+	for _, message := range messages {
+		description.WriteString(": ")
+		description.WriteString(message)
 	}
-	return &Error{
-		Stat:       "",
-		Desc:       description,
-		DebugStack: debugStack,
-	}
+	return fmt.Errorf("[%w]%s", err, description.String())
 }
-
-func (e *Error) String() string {
-	var subjacentErrors string
-	for i, err := range e.Joins {
-		subjacentErrors += "\n"
-		for range i {
-			subjacentErrors += "\t"
-		}
-		subjacentErrors += err.String()
-	}
-
-	return fmt.Sprintf("[%s]: %s%s%s", e.Stat, e.Desc, subjacentErrors, e.DebugStack)
-}
-
-// Appends to the end of the last description with a separator
-func (e *Error) Append(d string) *Error {
-	e.Desc += ": " + d
-	return e
-}
-
-// Inserts before all other descriptions with a separator
-func (e *Error) Insert(d string) *Error {
-	e.Desc += d + ": "
-	return e
-}
-func (e *Error) Status(s ErrorStatus) *Error {
-	e.Stat = s
-	return e
-}
-
-// Inserts a new error under the last error as a subjacent error
-func (e *Error) Join(e2 *Error) *Error {
-	if e2 == nil {
-		return e
-	}
-	e.Joins = append(e.Joins, e2)
-	return e
-}
-
-func (e *Error) Error() error {
-	return errors.New(e.String())
+func ErrorJoin(e1, e2 error) error {
+	return fmt.Errorf("%w\n%w", e1, e2)
 }

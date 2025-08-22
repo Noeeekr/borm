@@ -19,7 +19,7 @@ type Enum struct {
 	EnumMethods
 	*Typ
 
-	registerErrors *Error
+	registerErrors error
 	options        []string
 }
 

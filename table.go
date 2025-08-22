@@ -23,7 +23,7 @@ type TableName string
 type TableRegistry struct {
 	TableName TableName
 	Fields    map[TableFieldName]*TableFieldValues
-	Error     *Error
+	Error     error
 
 	RequiredTypes  []TypMethods
 	RequiredTables []*TableRegistry
@@ -53,7 +53,7 @@ func (m *TablesCache) RegisterTable(v any) *TableRegistry {
 	typ := reflect.TypeOf(v)
 	if typ.Kind() != reflect.TypeFor[struct{}]().Kind() {
 		var t TableRegistry
-		t.Error = NewError(typ.Name() + " must be of kind struct").Status(ErrInvalidType)
+		t.Error = ErrorDescription(ErrInvalidType, typ.Name(), "Must be of kind struct")
 		return &t
 	}
 	// Check if the struct is already cached and returns it if so
@@ -81,8 +81,7 @@ func (t *TableRegistry) Name(n string) *TableRegistry {
 func (t *TableRegistry) NeedTables(dependencies ...*TableRegistry) *TableRegistry {
 	for _, dependency := range dependencies {
 		if _, ok := (*t.databaseCache)[dependency.TableName]; !ok {
-			t.Error = NewError("TableRegistry is not registered. Unable to use it as a dependency.").
-				Status(ErrNotFound)
+			t.Error = ErrorDescription(ErrNotFound, "Unregistered table. Unable to use it as a dependency.")
 			return t
 		}
 	}

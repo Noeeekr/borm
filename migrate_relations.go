@@ -8,9 +8,9 @@ import (
 )
 
 // returns nil if migrations are not enabled in settings
-func (r *Commiter) MigrateRelations() *Error {
+func (r *Commiter) MigrateRelations() error {
 	if !configuration.Settings().Migrations().Enabled {
-		return NewError("Migration's disabled").Status(ErrConfiguration)
+		return ErrorDescription(ErrConfiguration, "Must enable migrations first")
 	}
 	manager := newTransactionFactory(r.db)
 	t, err := manager.StartTx()
@@ -19,14 +19,14 @@ func (r *Commiter) MigrateRelations() *Error {
 	}
 
 	if err := r.migrateTables(t); err != nil {
-		return NewError("Unable to migrate tables").Join(err).Status(ErrFailedTransaction)
+		return ErrorDescription(ErrFailedTransaction, "", err.Error())
 	}
 
 	return t.Commit()
 }
-func (r *Commiter) DropRelations() *Error {
+func (r *Commiter) DropRelations() error {
 	if !configuration.Settings().Migrations().Enabled {
-		return NewError("Migration's disabled").Status(ErrConfiguration)
+		return ErrorDescription(ErrConfiguration, "Must enable migrations first")
 	}
 
 	manager := newTransactionFactory(r.db)
@@ -45,7 +45,7 @@ func (r *Commiter) DropRelations() *Error {
 
 	return t.Commit()
 }
-func (r *Commiter) validateTables() *Error {
+func (r *Commiter) validateTables() error {
 	for _, table := range *r.DatabaseRegistry.TablesCache {
 		if table.Error != nil {
 			return table.Error
@@ -53,20 +53,21 @@ func (r *Commiter) validateTables() *Error {
 	}
 	return nil
 }
-func (r *Commiter) migrateTables(t *Transaction) *Error {
+func (r *Commiter) migrateTables(t *Transaction) error {
 	if err := r.validateTables(); err != nil {
 		return err
 	}
 
 	for _, table := range *r.TablesCache {
-		if err := r.migrateTable(t, table); err != nil {
-			return NewError(fmt.Sprintf("Unable to migrate table %s", table.TableName)).Join(err).Status(ErrSyntax)
+		if subErr := r.migrateTable(t, table); subErr != nil {
+			err := ErrorDescription(ErrSyntax, fmt.Sprintf("Unable to migrate table %s", table.TableName))
+			return ErrorJoin(err, subErr)
 		}
 	}
 
 	return nil
 }
-func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) *Error {
+func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) error {
 	var exists bool
 	existsQuery := NewUnsafeQuery(SELECT, "SELECT tablename FROM pg_catalog.pg_tables WHERE tablename = $1").
 		Scanner(ScannerFindOne(&exists))
@@ -120,7 +121,7 @@ func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) *Error {
 	query := parseCreateTableQuery(table)
 	return t.Do(query)
 }
-func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) *Error {
+func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) error {
 	var exists bool
 	query := NewUnsafeQuery(SELECT, fmt.Sprintf("SELECT typtype FROM pg_catalog.pg_type WHERE typtype = 'e' AND typname = '%s'", enum.Name)).
 		Scanner(ScannerFindOne(&exists))
@@ -141,11 +142,11 @@ func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) *Error {
 	}
 	return t.Do(parseCreateEnumQuery(enum))
 }
-func (r *Commiter) dropEnum(t *Transaction, enum *Enum) *Error {
+func (r *Commiter) dropEnum(t *Transaction, enum *Enum) error {
 	query := NewUnsafeQuery(DROP, fmt.Sprintf("DROP TYPE %s CASCADE", enum.Name))
 	return t.Do(query)
 }
-func (r *Commiter) dropTables(t *Transaction, tables ...*TableRegistry) *Error {
+func (r *Commiter) dropTables(t *Transaction, tables ...*TableRegistry) error {
 	for _, table := range tables {
 		query := NewUnsafeQuery(DROP, fmt.Sprintf("DROP TABLE %s CASCADE", table.TableName))
 		if err := t.Do(query); err != nil {

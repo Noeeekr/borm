@@ -2,6 +2,7 @@ package borm
 
 import (
 	"database/sql"
+	"errors"
 )
 
 // TransactionFactory creates, starts and commits transactions
@@ -16,17 +17,17 @@ func newTransactionFactory(db *sql.DB) *TransactionFactory {
 }
 
 // Start starts a transaction on the manager and returns the transaction.. If another transaction is happening it returns the current transaction.
-func (m *TransactionFactory) StartTx() (*Transaction, *Error) {
+func (m *TransactionFactory) StartTx() (*Transaction, error) {
 	tx, err := m.database.Begin()
 	if err != nil {
-		return nil, NewError(err.Error()).Status(ErrFailedTransactionStart)
+		return nil, errors.Join(ErrFailedTransaction, err)
 	}
 
 	return NewTransaction(tx), nil
 }
 
 // No transaction
-func (m *TransactionFactory) Do(query *Query) *Error {
+func (m *TransactionFactory) Do(query *Query) error {
 	if query.Error != nil {
 		return query.Error
 	}
@@ -36,13 +37,12 @@ func (m *TransactionFactory) Do(query *Query) *Error {
 
 	stmt, err := m.database.Prepare(query.Query)
 	if err != nil {
-		return NewError(err.Error()).
-			Status(ErrSyntax)
+		return errors.Join(ErrSyntax, err)
 	}
 
 	rows, err := stmt.Query(query.CurrentValues...)
 	if err != nil {
-		return NewError("Failed operation. " + err.Error()).Status(ErrFailedTransaction)
+		return errors.Join(ErrFailedTransaction, err)
 	}
 
 	if query.RowsScanner != nil {

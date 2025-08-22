@@ -17,13 +17,13 @@ const (
 func Settings() *configuration.Configuration {
 	return configuration.Settings()
 }
-func Connect(registor *DatabaseRegistry) (*Commiter, *Error) {
+func Connect(registor *DatabaseRegistry) (*Commiter, error) {
 	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", registor.Owner.Name, registor.Owner.password, registor.Host, registor.Name))
 	if err != nil {
-		return nil, NewError(err.Error()).Status(ErrBadConnection)
+		return nil, err
 	}
 	if err := db.Ping(); err != nil {
-		return nil, NewError("Unable to ping database").Append(err.Error()).Status(ErrBadConnection)
+		return nil, err
 	}
 	return newCommiter(registor, registor.Host, db), nil
 }

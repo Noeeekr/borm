@@ -7,23 +7,23 @@ import (
 )
 
 // Environment migrates the environment if migrations is enabled and then attempts to connect to the database. If migrations is not enabled it jumps to the connection.
-func (m *Commiter) MigrateUsers(users ...*User) *Error {
+func (m *Commiter) MigrateUsers(users ...*User) error {
 	migrations := configuration.Settings().Migrations()
 	if !migrations.Enabled {
-		return NewError("Migration must be enabled first").Status(ErrConfiguration)
+		return ErrorDescription(ErrConfiguration, "Must enable migrations in settings first")
 	}
 
 	created, err := m.migrateUsers(users...)
 	if err != nil {
 		if migrations.Undo {
-			return err.Join(m.dropDatabaseUsers(created...))
+			return m.dropDatabaseUsers(created...)
 		}
 		return err
 	}
 
 	return nil
 }
-func (m *Commiter) MigrateDatabase(registor *DatabaseRegistry) (*Commiter, *Error) {
+func (m *Commiter) MigrateDatabase(registor *DatabaseRegistry) (*Commiter, error) {
 	migrations := configuration.Settings().Migrations()
 	if !migrations.Enabled {
 		return Connect(registor)
@@ -37,7 +37,7 @@ func (m *Commiter) MigrateDatabase(registor *DatabaseRegistry) (*Commiter, *Erro
 	return Connect(registor)
 }
 
-func (m *Commiter) migrateUsers(users ...*User) ([]*User, *Error) {
+func (m *Commiter) migrateUsers(users ...*User) ([]*User, error) {
 	created := []*User{}
 	for _, user := range users {
 		fmt.Println("[Creating database user]:", user.Name)
@@ -49,10 +49,10 @@ func (m *Commiter) migrateUsers(users ...*User) ([]*User, *Error) {
 	}
 	return created, nil
 }
-func (m *Commiter) migrateDatabaseUser(user *User) *Error {
+func (m *Commiter) migrateDatabaseUser(user *User) error {
 	rows, err := m.db.Query("SELECT rolname FROM pg_catalog.pg_roles WHERE rolname = $1;", user.Name)
 	if err != nil {
-		return NewError("Failure while checking if user exists").Append(err.Error()).Status(ErrSyntax)
+		return ErrorDescription(ErrSyntax, err.Error())
 	}
 
 	configuration := configuration.Settings().Migrations()
@@ -77,14 +77,14 @@ func (m *Commiter) migrateDatabaseUser(user *User) *Error {
 	createUserQuery := m.parseCreateUserQuery(user)
 	_, err = m.db.Exec(createUserQuery.Query)
 	if err != nil {
-		return NewError("Failed creating user").Append(err.Error()).Status(ErrFailedOperation)
+		return ErrorDescription(ErrFailedOperation, err.Error())
 	}
 	return nil
 }
-func (m *Commiter) migrateDatabase(database *DatabaseRegistry) *Error {
+func (m *Commiter) migrateDatabase(database *DatabaseRegistry) error {
 	rows, err := m.db.Query("SELECT datname FROM pg_catalog.pg_database WHERE datname = $1;", database.Name)
 	if err != nil {
-		return NewError(err.Error()).Status(ErrSyntax)
+		return ErrorDescription(ErrSyntax, err.Error())
 	}
 
 	configuration := configuration.Settings().Migrations()
@@ -102,15 +102,15 @@ func (m *Commiter) migrateDatabase(database *DatabaseRegistry) *Error {
 
 	_, err = m.db.Exec(m.parseCreateDatabaseQuery(database).Query)
 	if err != nil {
-		return NewError(err.Error()).Status(ErrFailedOperation)
+		return ErrorDescription(ErrFailedOperation, err.Error())
 	}
 	return nil
 }
-func (m *Commiter) dropDatabaseUsers(users ...*User) *Error {
+func (m *Commiter) dropDatabaseUsers(users ...*User) error {
 	for _, user := range users {
 		rows, err := m.db.Query("SELECT datname FROM pg_catalog.pg_database d INNER JOIN pg_catalog.pg_roles u ON d.datdba = u.oid WHERE rolname = $1;", user.Name)
 		if err != nil {
-			return NewError(err.Error()).Status(ErrFailedOperation)
+			return ErrorDescription(ErrFailedOperation, err.Error())
 		}
 
 		var datnames []string
@@ -118,7 +118,7 @@ func (m *Commiter) dropDatabaseUsers(users ...*User) *Error {
 			var datname string
 			err := rows.Scan(&datname)
 			if err != nil {
-				return NewError(err.Error()).Status(ErrFailedOperation)
+				return ErrorDescription(ErrFailedOperation, err.Error())
 			}
 			datnames = append(datnames, datname)
 		}
@@ -127,22 +127,22 @@ func (m *Commiter) dropDatabaseUsers(users ...*User) *Error {
 		for _, datname := range datnames {
 			_, err := m.db.Exec("DROP DATABASE " + datname)
 			if err != nil {
-				return NewError("Failure while dropping database").Append(err.Error()).Status(ErrFailedOperation)
+				return ErrorDescription(ErrFailedOperation, err.Error())
 			}
 		}
 
 		dropUserQuery := m.parseDropUserQuery(user)
 		_, err = m.db.Exec(dropUserQuery.Query)
 		if err != nil {
-			return NewError(err.Error()).Status(ErrFailedOperation)
+			return ErrorDescription(ErrFailedOperation, err.Error())
 		}
 	}
 	return nil
 }
-func (m *Commiter) dropDatabase(database *DatabaseRegistry) *Error {
+func (m *Commiter) dropDatabase(database *DatabaseRegistry) error {
 	_, err := m.db.Exec(fmt.Sprintf("DROP DATABASE %s;", database.Name))
 	if err != nil {
-		return NewError(err.Error()).Status(ErrFailedOperation)
+		return ErrorDescription(ErrFailedOperation, err.Error())
 	}
 	return nil
 }

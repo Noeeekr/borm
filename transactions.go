@@ -11,6 +11,7 @@ package borm
 
 import (
 	"database/sql"
+	"errors"
 )
 
 // Transaction Automatically switches between Query() and Exec() when necessary.
@@ -30,12 +31,12 @@ func NewTransaction(tx *sql.Tx) *Transaction {
 	}
 }
 
-func (t *Transaction) Do(query *Query) *Error {
+func (t *Transaction) Do(query *Query) error {
 	if err := query.validateFields(); err != nil {
 		return err
 	}
 	if query == nil {
-		return NewError("Failed transaction").Append("Unable to proceed, cannot use empty queries").Status(ErrSyntax)
+		return ErrorDescription(ErrSyntax, "Failed operation, cannot use empty queries")
 	}
 	if query.Error != nil {
 		return query.Error
@@ -43,9 +44,9 @@ func (t *Transaction) Do(query *Query) *Error {
 
 	stmt, err := t.tx.Prepare(query.Query)
 	if err != nil {
-		err := NewError(err.Error()).Status(ErrSyntax)
+		err := ErrorJoin(ErrSyntax, err)
 		if Settings().Environment().GetEnvironment() == DEBUGGING {
-			err.Append("\n[Query]: " + query.Query)
+			ErrorJoin(err, errors.New("\n[Query]: "+query.Query))
 		}
 		return err
 	}
@@ -56,18 +57,18 @@ func (t *Transaction) Do(query *Query) *Error {
 	return t.exec(stmt, query.CurrentValues...)
 }
 
-func (t *Transaction) Commit() *Error {
+func (t *Transaction) Commit() error {
 	if err := t.tx.Commit(); err != nil {
-		return NewError(err.Error()).Status(ErrFailedTransactionCommit)
+		return ErrorDescription(ErrFailedTransactionCommit, err.Error())
 	}
 
 	return nil
 }
 
-func (t *Transaction) query(stmt *sql.Stmt, query *Query) *Error {
+func (t *Transaction) query(stmt *sql.Stmt, query *Query) error {
 	rows, err := stmt.Query(query.CurrentValues...)
 	if err != nil {
-		return NewError(err.Error()).Join(t.rollback()).Status(ErrFailedTransaction)
+		return ErrorJoin(ErrorDescription(ErrFailedTransaction, err.Error()), t.rollback())
 	}
 
 	if err := query.Scan(rows); t != nil {
@@ -77,24 +78,24 @@ func (t *Transaction) query(stmt *sql.Stmt, query *Query) *Error {
 	return nil
 }
 
-func (t *Transaction) exec(stmt *sql.Stmt, args ...any) *Error {
+func (t *Transaction) exec(stmt *sql.Stmt, args ...any) error {
 	_, err := stmt.Exec(args...)
 	if err != nil {
-		return NewError("Transaction failed").Append(err.Error()).Join(t.rollback()).Status(ErrFailedTransaction)
+		return ErrorJoin(ErrorDescription(ErrFailedTransaction, "Transaction failed", err.Error()), t.rollback())
 	}
 	return nil
 }
 
-func (t *Transaction) rollback() *Error {
+func (t *Transaction) rollback() error {
 	if err := t.tx.Rollback(); err != nil {
-		return NewError("Failed rollback. ").Append(err.Error())
+		return ErrorDescription(ErrFailedTransactionRollback, err.Error())
 	}
 	return nil
 }
 
 // ScannerFindOne is a scanner helper function. Returns true if at least one row is returned. Doesn't throw ErrNotFound. Instead returns false.
 var ScannerFindOne = func(exists *bool) QueryRowsScanner {
-	return func(rows *sql.Rows, throErrorOnFound bool) *Error {
+	return func(rows *sql.Rows, throErrorOnFound bool) error {
 		defer rows.Close()
 		*exists = rows.Next()
 		return nil

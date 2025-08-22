@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-type QueryRowsScanner func(rows *sql.Rows, throErrorOnFound bool) *Error
+type QueryRowsScanner func(rows *sql.Rows, throErrorOnFound bool) error
 
 type QueryType int
 type Query struct {
@@ -18,7 +18,7 @@ type Query struct {
 	// For build
 	Query         string
 	TableRegistry *TableRegistry
-	Error         *Error
+	Error         error
 	RegisteredIds map[string]bool
 
 	// map[alias]table
@@ -50,7 +50,7 @@ const FIELD_PARSER_PLACEHOLDER = "$$$"
 func NewUnsafeQuery(typ QueryType, q string) *Query {
 	return &Query{typ: typ, Query: q}
 }
-func (q *Query) Scan(rows *sql.Rows) *Error {
+func (q *Query) Scan(rows *sql.Rows) error {
 	return q.RowsScanner(rows, q.throErrorOnFound)
 }
 
@@ -68,7 +68,7 @@ func (q *Query) ThrowErrorOnFound() *Query {
 	q.throErrorOnFound = true
 	return q
 }
-func (q *Query) SetError(e *Error) *Query {
+func (q *Query) SetError(e error) *Query {
 	q.Error = e
 	return q
 }
@@ -77,18 +77,16 @@ func (q *Query) Values(values ...any) *Query {
 		return q
 	}
 	if q.typ == SELECT || q.typ == DELETE {
-		q.Error = NewError("Must be INSERT | UPDATE ").Status(ErrInvalidMethodChain)
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be { INSERT, UPDATE }")
 		return q
 	}
 	var valueAmount = len(values)
 	if valueAmount == 0 {
-		q.Error = NewError("Cannot use empty values").Status(ErrEmpty)
+		q.Error = ErrorDescription(ErrSyntax, "Values must not be empty. Consider removing it first or handling empty cases.")
 		return q
 	}
 	if valueAmount%q.requiredValueLength != 0 {
-		q.Error = NewError("Invalid value amount").
-			Append(fmt.Sprintf("Wanted: multiple of %d. Recieved: %d", q.requiredValueLength, valueAmount)).
-			Status(ErrSyntax)
+		q.Error = ErrorDescription(ErrSyntax, fmt.Sprintf("Invalid value amount. Wanted: multiple of %d. Recieved: %d", q.requiredValueLength, valueAmount))
 		return q
 	}
 
@@ -112,7 +110,7 @@ func (q *Query) Set(field string, value any) *Query {
 		return q
 	}
 	if q.typ != UPDATE {
-		q.Error = NewError("Must be INSERT or UPDATE").Status(ErrInvalidMethodChain)
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT or UPDATE")
 		return q
 	}
 	q.fields = append(q.fields, field)
@@ -141,7 +139,7 @@ func (q *Query) Where(fieldName string, fieldValue any) *Query {
 		return q
 	}
 	if q.typ == INSERT {
-		q.Error = NewError("Must be INSERT | UPDATE | DELETE").Status(ErrInvalidMethodChain)
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT | UPDATE | DELETE")
 		return q
 	}
 	q.registerForValidation(fieldName)
@@ -229,7 +227,7 @@ func (q *Query) Returning(fields ...string) *Query {
 		return q
 	}
 	if q.typ == SELECT {
-		q.Error = NewError("Must be INSERT | UPDATE | DELETE").Status(ErrInvalidMethodChain)
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT | UPDATE | DELETE")
 		return q
 	}
 
@@ -238,7 +236,7 @@ func (q *Query) Returning(fields ...string) *Query {
 	return q
 }
 
-func (q *Query) validateFields() *Error {
+func (q *Query) validateFields() error {
 	var fields []string
 	for _, fieldName := range q.fields {
 		var table *TableRegistry = q.TableRegistry
@@ -255,13 +253,11 @@ func (q *Query) validateFields() *Error {
 			fieldName = alias
 		}
 		if table == nil {
-			return NewError(fmt.Sprintf("Failed to resolve field [%s]. Perhaps an missing alias", fieldName)).
-				Status(ErrSyntax)
+			return ErrorDescription(ErrSyntax, fmt.Sprintf("Failed to resolve field [%s]. Perhaps an missing alias", fieldName))
 		}
 		_, exists := table.Fields[TableFieldName(fieldName)]
 		if !exists {
-			return NewError(fmt.Sprintf("%s does not exist in %s", fieldName, table.TableName)).
-				Status(ErrSyntax)
+			return ErrorDescription(ErrSyntax, fmt.Sprintf("%s does not exist in %s", fieldName, table.TableName))
 		}
 		fields = append(fields, string(fieldName))
 	}
@@ -273,7 +269,7 @@ func (q *Query) registerForValidation(fieldNames ...string) {
 func newQueryOnTable(t *TableRegistry) *Query {
 	var q Query
 	if t == nil {
-		q.Error = NewError("Cannot query nil table").Status(ErrEmpty)
+		q.Error = ErrorDescription(ErrUnexpected, "Unable to query <nil> table.")
 		return &q
 	}
 

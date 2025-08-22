@@ -35,7 +35,7 @@ func (r *TypesCache) RegisterEnum(name string, values ...any) *Enum {
 			continue
 		}
 		return &Enum{
-			registerErrors: NewError("Values must be of the same kind of a string").Status(ErrInvalidType),
+			registerErrors: ErrInvalidType,
 			Typ:            &Typ{Type: ENUM},
 		}
 	}

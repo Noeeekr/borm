@@ -191,21 +191,21 @@ func main() {
 }
 
 func scanInt(i *int) borm.QueryRowsScanner {
-	return func(rows *sql.Rows, throwErrorOnFound bool) *borm.Error {
+	return func(rows *sql.Rows, throwErrorOnFound bool) error {
 		defer rows.Close()
 		if rows.Next() {
 			if err := rows.Scan(i); err != nil {
-				return borm.NewError(err.Error()).Status(borm.ErrFailedOperation)
+				return borm.ErrorJoin(borm.ErrFailedOperation, err)
 			}
 		} else {
-			return borm.NewError("No rows found").Status(borm.ErrNotFound)
+			return borm.ErrorDescription(borm.ErrNotFound, "No rows found")
 		}
 		return nil
 	}
 }
 
 func scanNotifications(n *[]*Notifications) borm.QueryRowsScanner {
-	return func(rows *sql.Rows, throErrorOnFound bool) *borm.Error {
+	return func(rows *sql.Rows, throErrorOnFound bool) error {
 		defer rows.Close()
 
 		for rows.Next() {
@@ -216,11 +216,11 @@ func scanNotifications(n *[]*Notifications) borm.QueryRowsScanner {
 		if rows.Err() == nil {
 			return nil
 		}
-		return borm.NewError(rows.Err().Error()).Status(borm.ErrUnexpected)
+		return borm.ErrorDescription(borm.ErrUnexpected, rows.Err().Error())
 	}
 }
 func RowAmount(i *int) borm.QueryRowsScanner {
-	return func(rows *sql.Rows, throwErrorOnFound bool) *borm.Error {
+	return func(rows *sql.Rows, throwErrorOnFound bool) error {
 		defer rows.Close()
 		for rows.Next() {
 			*i++
