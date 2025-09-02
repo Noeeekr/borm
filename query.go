@@ -151,6 +151,12 @@ func (q *Query) Where(fieldName string, fieldValues ...any) *Query {
 	}
 	q.registerForValidation(fieldName)
 
+	fieldAmount := len(fieldValues)
+	if fieldAmount == 0 {
+		q.Error = ErrorDescription(ErrSyntax, "Where clause shouldn't be empty and can cause unwanted returns. Consider removing it if it is intended.")
+		return q
+	}
+
 	if q.HasRegisteredID(INTERNAL_WHERE_ID) {
 		q.Query += "AND "
 	} else {
@@ -158,7 +164,6 @@ func (q *Query) Where(fieldName string, fieldValues ...any) *Query {
 		q.RegisterID(INTERNAL_WHERE_ID)
 	}
 
-	fieldAmount := len(fieldValues)
 	if fieldAmount < 2 {
 		q.Query += fmt.Sprintf("%s = $%d ", fieldName, q.placeholderIndex)
 		q.placeholderIndex++

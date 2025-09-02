@@ -210,7 +210,7 @@ func main() {
 	fmt.Println("[Issuer ID Returned From Insert]: ", firstUser)
 	fmt.Println("[Notification Rows found]: ", len(notifications))
 	for _, notification := range notifications {
-		fmt.Println("	[Notification ID]: ", notification.Id)
+		fmt.Println("\t[Notification ID]: ", notification.Id)
 	}
 }
 
