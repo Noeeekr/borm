@@ -50,22 +50,22 @@ func NewTableRegistry(name string) *TableRegistry {
 // Registers a table for migration and queries. v must be a struct type.
 func (m *TablesCache) RegisterTable(v any) *TableRegistry {
 	// Check if the value is a struct
-	typ := reflect.TypeOf(v)
-	if typ.Kind() != reflect.TypeFor[struct{}]().Kind() {
+	Type := reflect.TypeOf(v)
+	if Type.Kind() != reflect.TypeFor[struct{}]().Kind() {
 		var t TableRegistry
-		t.Error = ErrorDescription(ErrInvalidType, typ.Name(), "Must be of kind struct")
+		t.Error = ErrorDescription(ErrInvalidType, Type.Name(), "Must be of kind struct")
 		return &t
 	}
 	// Check if the struct is already cached and returns it if so
-	tableName := TableName(strings.ToLower(typ.Name()))
+	tableName := TableName(strings.ToLower(Type.Name()))
 	if TableRegistry, ok := (*m)[tableName]; ok {
 		return TableRegistry
 	}
 
 	// Creates and caches a new TableRegistry
 	registry := &TableRegistry{
-		TableName:     TableName(strings.ToLower(typ.Name())),
-		Fields:        parseFields(typ),
+		TableName:     TableName(strings.ToLower(Type.Name())),
+		Fields:        parseFields(Type),
 		databaseCache: m,
 	}
 	(*m)[tableName] = registry
@@ -96,7 +96,7 @@ func (m *TableRegistry) Update() *Query {
 	q := newQueryOnTable(m)
 	q.tableAliases[""] = m
 	q.Query += fmt.Sprintf("UPDATE %s ", m.TableName)
-	q.typ = UPDATE
+	q.Type = UPDATE
 	return q
 }
 func (m *TableRegistry) Select(fieldsName ...string) *Query {
@@ -109,7 +109,7 @@ func (m *TableRegistry) Select(fieldsName ...string) *Query {
 	q.tableAliases[""] = m
 	q.requestedFields = append(q.requestedFields, fieldsName...)
 
-	q.typ = SELECT
+	q.Type = SELECT
 	q.Query = fmt.Sprintf("SELECT %s ", strings.Join(fieldsName, ", "))
 	q.Query += fmt.Sprintf("FROM %s ", q.TableRegistry.TableName)
 	return q
@@ -123,7 +123,7 @@ func (m *TableRegistry) Insert(fieldsName ...string) *Query {
 	q.tableAliases[""] = m
 	q.requestedFields = append(q.requestedFields, fieldsName...)
 
-	q.typ = INSERT
+	q.Type = INSERT
 	q.requiredValueLength = len(fieldsName)
 	q.Query = fmt.Sprintf("INSERT INTO %s (%s) ", q.TableRegistry.TableName, strings.Join(fieldsName, ", "))
 	return q
@@ -134,28 +134,28 @@ func (m *TableRegistry) Delete() *Query {
 		return q
 	}
 	q.tableAliases[""] = m
-	q.typ = DELETE
+	q.Type = DELETE
 	q.Query += fmt.Sprintf("DELETE FROM %s ", q.TableRegistry.TableName)
 	return q
 }
 
-func parseFields(typ reflect.Type) map[TableFieldName]*TableFieldValues {
+func parseFields(Type reflect.Type) map[TableFieldName]*TableFieldValues {
 	fields := map[TableFieldName]*TableFieldValues{}
 
 	tagReader := newTagReader()
-	for i := range typ.NumField() {
-		structField := typ.Field(i)
-		typ := structField.Type
-		if typ.Kind() == reflect.Pointer {
-			typ = typ.Elem()
+	for i := range Type.NumField() {
+		structField := Type.Field(i)
+		Type := structField.Type
+		if Type.Kind() == reflect.Pointer {
+			Type = Type.Elem()
 		}
 		// Copy the embedded struct fields
-		if structField.Anonymous && typ.Kind() == reflect.Struct {
-			maps.Copy(fields, parseFields(typ))
+		if structField.Anonymous && Type.Kind() == reflect.Struct {
+			maps.Copy(fields, parseFields(Type))
 			continue
 		}
 		fieldName := TableFieldName(strings.ToLower(structField.Name))
-		fieldType := parseFieldType(typ.Name())
+		fieldType := parseFieldType(Type.Name())
 		field := tagReader.
 			Override(newTableFieldValues(fieldName, fieldType)).
 			Read(structField)
@@ -164,9 +164,9 @@ func parseFields(typ reflect.Type) map[TableFieldName]*TableFieldValues {
 	}
 	return fields
 }
-func newTableFieldValues(name TableFieldName, typ string) *TableFieldValues {
+func newTableFieldValues(name TableFieldName, Type string) *TableFieldValues {
 	return &TableFieldValues{
 		Name: name,
-		Type: typ,
+		Type: Type,
 	}
 }

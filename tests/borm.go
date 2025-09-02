@@ -96,22 +96,29 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	var user1Id int
+	var firstUser int
 
 	err = transaction.Do(TABLE_USERS.
 		Insert("email", "password", "name", "role").
 		Values("noeeekr@gmail.com", "noeeekr", "noeeekr", ADMIN).
-		Returning("id").Scanner(scanInt(&user1Id)),
+		Returning("id").Scanner(scanInt(&firstUser)),
 	)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	var user2Id int
+	var secondUser int
 	err = transaction.Do(TABLE_USERS.
 		Insert("email", "password", "name", "role").
-		Values("cardozoandre0101@gmail.com", "andre", "andre", STUDENT).
-		Returning("id").Scanner(scanInt(&user2Id)),
+		Values(
+			"email1@gmail.com", "123456", "andre", STUDENT,
+			"email2@gmail.com", "123456", "peter", STUDENT,
+			"email3@gmail.com", "123456", "gustav", STUDENT,
+			"email4@gmail.com", "123456", "mason", STUDENT,
+			"email5@gmail.com", "123456", "jorge", STUDENT,
+			"email6@gmail.com", "123456", "alfredo", STUDENT,
+		).
+		Returning("id").Scanner(scanInt(&secondUser)),
 	)
 	if err != nil {
 		fmt.Println(err)
@@ -120,7 +127,7 @@ func main() {
 	var notificationId int
 	err = transaction.Do(TABLE_NOTIFICATIONS.
 		Insert("issuer_id", "description").
-		Values(user1Id, "test notification description").
+		Values(firstUser, "test notification description").
 		Returning("id").Scanner(scanInt(&notificationId)),
 	)
 	if err != nil {
@@ -129,7 +136,7 @@ func main() {
 	}
 	err = transaction.Do(TABLE_USERS_NOTIFICATIONS.
 		Insert("user_id", "notification_id").
-		Values(user1Id, notificationId),
+		Values(firstUser, notificationId),
 	)
 	if err != nil {
 		fmt.Println(err)
@@ -137,7 +144,7 @@ func main() {
 	}
 	err = transaction.Do(TABLE_NOTIFICATIONS.
 		Insert("issuer_id", "title", "description").
-		Values(user1Id, "test notification title 2", "test notification description 2").
+		Values(firstUser, "test notification title 2", "test notification description 2").
 		Returning("id").Scanner(scanInt(&notificationId)),
 	)
 	if err != nil {
@@ -146,7 +153,7 @@ func main() {
 	}
 	err = transaction.Do(TABLE_USERS_NOTIFICATIONS.
 		Insert("user_id", "notification_id").
-		Values(user1Id, notificationId),
+		Values(firstUser, notificationId),
 	)
 	if err != nil {
 		fmt.Println(err)
@@ -183,7 +190,24 @@ func main() {
 		return
 	}
 
-	fmt.Println("[Issuer ID Returned From Insert]: ", user1Id)
+	var whereInExpectedReturn = []any{"peter", "andre", "jorge"}
+	var whereInFoundAmount int
+	err = development.Do(TABLE_USERS.
+		Select("id", "email", "name").
+		Where("name", whereInExpectedReturn...).
+		OrderAscending("id").
+		Scanner(RowAmount(&whereInFoundAmount)),
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println("[Query Using Where (A) IN (A, B, C, ...)]")
+	fmt.Println("\t[Expected Amount]:", len(whereInExpectedReturn))
+	fmt.Println("\t[Found Amount]:", whereInFoundAmount)
+
+	fmt.Println("[Issuer ID Returned From Insert]: ", firstUser)
 	fmt.Println("[Notification Rows found]: ", len(notifications))
 	for _, notification := range notifications {
 		fmt.Println("	[Notification ID]: ", notification.Id)

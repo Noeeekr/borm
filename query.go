@@ -17,7 +17,7 @@ type ReturnScanner func(rows *sql.Rows) (found bool, err error)
 
 type QueryType int
 type Query struct {
-	typ                 QueryType
+	Type                QueryType
 	requiredValueLength int
 	CurrentValues       []any
 	placeholderIndex    int
@@ -54,8 +54,8 @@ const INTERNAL_JOIN_ID = "join"
 const FIELD_PARSER_PLACEHOLDER = "$$$"
 
 // Unsafe Queries are not stable to use methods are may panic
-func NewUnsafeQuery(typ QueryType, q string) *Query {
-	return &Query{typ: typ, Query: q}
+func NewUnsafeQuery(Type QueryType, q string) *Query {
+	return &Query{Type: Type, Query: q}
 }
 func (q *Query) Scan(rows *sql.Rows) (found bool, err error) {
 	return q.RowsScanner(rows)
@@ -83,7 +83,7 @@ func (q *Query) Values(values ...any) *Query {
 	if q.Error != nil {
 		return q
 	}
-	if q.typ == SELECT || q.typ == DELETE {
+	if q.Type == SELECT || q.Type == DELETE {
 		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be { INSERT, UPDATE }")
 		return q
 	}
@@ -109,14 +109,14 @@ func (q *Query) Values(values ...any) *Query {
 	}
 
 	q.CurrentValues = values
-	q.Query += fmt.Sprintf("VALUES %s ", strings.Join(fields, ","))
+	q.Query += fmt.Sprintf("VALUES %s ", strings.Join(fields, ", "))
 	return q
 }
 func (q *Query) Set(field string, value any) *Query {
 	if q.Error != nil {
 		return q
 	}
-	if q.typ != UPDATE {
+	if q.Type != UPDATE {
 		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT or UPDATE")
 		return q
 	}
@@ -141,11 +141,11 @@ func (q *Query) HasRegisteredID(id string) bool {
 	_, found := q.RegisteredIds[id]
 	return found
 }
-func (q *Query) Where(fieldName string, fieldValue any) *Query {
+func (q *Query) Where(fieldName string, fieldValues ...any) *Query {
 	if q.Error != nil {
 		return q
 	}
-	if q.typ == INSERT {
+	if q.Type == INSERT {
 		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT | UPDATE | DELETE")
 		return q
 	}
@@ -158,9 +158,20 @@ func (q *Query) Where(fieldName string, fieldValue any) *Query {
 		q.RegisterID(INTERNAL_WHERE_ID)
 	}
 
-	q.Query += fmt.Sprintf("%s = $%d ", fieldName, q.placeholderIndex)
-	q.placeholderIndex++
-	q.CurrentValues = append(q.CurrentValues, fieldValue)
+	fieldAmount := len(fieldValues)
+	if fieldAmount < 2 {
+		q.Query += fmt.Sprintf("%s = $%d ", fieldName, q.placeholderIndex)
+		q.placeholderIndex++
+	} else {
+		// formats to: A in ($1, $2, $3, ...)
+		placeholders := make([]string, fieldAmount)
+		for i := range fieldValues {
+			placeholders[i] = fmt.Sprintf("$%d", q.placeholderIndex)
+			q.placeholderIndex++
+		}
+		q.Query += fmt.Sprintf("%s IN (%s) ", fieldName, strings.Join(placeholders, ", "))
+	}
+	q.CurrentValues = append(q.CurrentValues, fieldValues...)
 	return q
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
@@ -232,7 +243,7 @@ func (q *Query) Returning(fields ...string) *Query {
 	if q.Error != nil {
 		return q
 	}
-	if q.typ == SELECT {
+	if q.Type == SELECT {
 		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT | UPDATE | DELETE")
 		return q
 	}
