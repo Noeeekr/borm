@@ -170,7 +170,7 @@ func main() {
 		Select("n.id", "n.title", "n.description").As("u").
 		InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id").
 		InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id").
-		Where("u.email", "noeeekr@gmail.com").
+		Where("u.email").Equals("noeeekr@gmail.com").
 		OrderAscending("n.id").
 		Scanner(scanNotifications(&notifications)),
 	)
@@ -181,7 +181,7 @@ func main() {
 	var userAmountFound int
 	err = development.Do(TABLE_USERS.
 		Select("id", "email", "name").
-		Where("email", "noeeekr@gmail.com").
+		Where("email").Equals("noeeekr@gmail.com").
 		OrderAscending("id").
 		Scanner(RowAmount(&userAmountFound)),
 	)
@@ -194,7 +194,7 @@ func main() {
 	var whereInFoundAmount int
 	err = development.Do(TABLE_USERS.
 		Select("id", "email", "name").
-		Where("name", whereInExpectedReturn...).
+		Where("name").In(whereInExpectedReturn...).
 		OrderAscending("id").
 		Scanner(RowAmount(&whereInFoundAmount)),
 	)

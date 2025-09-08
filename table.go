@@ -93,14 +93,14 @@ func (t *TableRegistry) NeedRoles(dependencies ...TypMethods) *TableRegistry {
 	return t
 }
 func (m *TableRegistry) Update() *Query {
-	q := newQueryOnTable(m)
+	q := NewQuery(m, UPDATE)
 	q.tableAliases[""] = m
 	q.Query += fmt.Sprintf("UPDATE %s ", m.TableName)
-	q.Type = UPDATE
+
 	return q
 }
 func (m *TableRegistry) Select(fieldsName ...string) *Query {
-	q := newQueryOnTable(m)
+	q := NewQuery(m, SELECT)
 	if q.Error != nil {
 		return q
 	}
@@ -116,7 +116,7 @@ func (m *TableRegistry) Select(fieldsName ...string) *Query {
 }
 
 func (m *TableRegistry) Insert(fieldsName ...string) *Query {
-	q := newQueryOnTable(m)
+	q := NewQuery(m, INSERT)
 	if q.Error != nil {
 		return q
 	}
@@ -129,12 +129,11 @@ func (m *TableRegistry) Insert(fieldsName ...string) *Query {
 	return q
 }
 func (m *TableRegistry) Delete() *Query {
-	q := newQueryOnTable(m)
+	q := NewQuery(m, DELETE)
 	if q.Error != nil {
 		return q
 	}
 	q.tableAliases[""] = m
-	q.Type = DELETE
 	q.Query += fmt.Sprintf("DELETE FROM %s ", q.TableRegistry.TableName)
 	return q
 }

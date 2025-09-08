@@ -69,8 +69,9 @@ func (r *Commiter) migrateTables(t *Transaction) error {
 }
 func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) error {
 	var exists bool
-	existsQuery := NewUnsafeQuery(SELECT, "SELECT tablename FROM pg_catalog.pg_tables WHERE tablename = $1").
-		Scanner(ScannerFindOne(&exists))
+	existsQuery := newUnsafeQuery(SELECT, "SELECT tablename FROM pg_catalog.pg_tables WHERE tablename = $1")
+	existsQuery.Scanner(ScannerFindOne(&exists))
+
 	existsQuery.CurrentValues = append(existsQuery.CurrentValues, table.TableName)
 	err := t.Do(existsQuery)
 	if err != nil {
@@ -123,8 +124,9 @@ func (r *Commiter) migrateTable(t *Transaction, table *TableRegistry) error {
 }
 func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) error {
 	var exists bool
-	query := NewUnsafeQuery(SELECT, fmt.Sprintf("SELECT typtype FROM pg_catalog.pg_type WHERE typtype = 'e' AND typname = '%s'", enum.Name)).
-		Scanner(ScannerFindOne(&exists))
+	queryStr := fmt.Sprintf("SELECT typtype FROM pg_catalog.pg_type WHERE typtype = 'e' AND typname = '%s'", enum.Name)
+	query := newUnsafeQuery(SELECT, queryStr)
+	query.Scanner(ScannerFindOne(&exists))
 
 	if err := t.Do(query); err != nil {
 		return err
@@ -143,12 +145,12 @@ func (r *Commiter) migrateEnum(t *Transaction, enum *Enum) error {
 	return t.Do(parseCreateEnumQuery(enum))
 }
 func (r *Commiter) dropEnum(t *Transaction, enum *Enum) error {
-	query := NewUnsafeQuery(DROP, fmt.Sprintf("DROP TYPE %s CASCADE", enum.Name))
+	query := newUnsafeQuery(DROP, fmt.Sprintf("DROP TYPE %s CASCADE", enum.Name))
 	return t.Do(query)
 }
 func (r *Commiter) dropTables(t *Transaction, tables ...*TableRegistry) error {
 	for _, table := range tables {
-		query := NewUnsafeQuery(DROP, fmt.Sprintf("DROP TABLE %s CASCADE", table.TableName))
+		query := newUnsafeQuery(DROP, fmt.Sprintf("DROP TABLE %s CASCADE", table.TableName))
 		if err := t.Do(query); err != nil {
 			return err
 		}
@@ -171,7 +173,10 @@ func parseCreateTableQuery(table *TableRegistry) *Query {
 		fieldStatements = append(fieldStatements, statement)
 	}
 
-	return NewUnsafeQuery(CREATE, fmt.Sprintf("CREATE TABLE %s (%s\n);", table.TableName, strings.Join(fieldStatements, ",")))
+	queryStr := fmt.Sprintf("CREATE TABLE %s (%s\n);", table.TableName, strings.Join(fieldStatements, ","))
+	query := newUnsafeQuery(CREATE, queryStr)
+
+	return query
 }
 func parseCreateEnumQuery(enum *Enum) *Query {
 	values := enum.GetValues()
@@ -179,7 +184,8 @@ func parseCreateEnumQuery(enum *Enum) *Query {
 		values[i] = fmt.Sprintf("'%s'", value)
 	}
 
-	queryString := fmt.Sprintf("CREATE TYPE %s AS ENUM (%s);", strings.ToLower(string(enum.Name)), strings.Join(values, ", "))
-	query := NewUnsafeQuery(CREATE, queryString)
+	queryStr := fmt.Sprintf("CREATE TYPE %s AS ENUM (%s);", strings.ToLower(string(enum.Name)), strings.Join(values, ", "))
+	query := newUnsafeQuery(CREATE, queryStr)
+
 	return query
 }
