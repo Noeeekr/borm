@@ -288,6 +288,30 @@ func (q *Query) validateFields() error {
 func (q *Query) registerForValidation(fieldNames ...string) {
 	q.requestedFields = append(q.requestedFields, fieldNames...)
 }
+func (q *Query) Offset(amount int) *Query {
+	if q.Error != nil {
+		return q
+	}
+	if q.Type != SELECT {
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT")
+		return q
+	}
+
+	q.Query += fmt.Sprintf("OFFSET %d ", amount)
+	return q
+}
+func (q *Query) Limit(amount int) *Query {
+	if q.Error != nil {
+		return q
+	}
+	if q.Type != SELECT {
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT")
+		return q
+	}
+
+	q.Query += fmt.Sprintf("LIMIT %d ", amount)
+	return q
+}
 func newQueryOnTable(t *TableRegistry) *Query {
 	var q Query
 	if t == nil {
