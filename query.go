@@ -23,15 +23,18 @@ type Query struct {
 	placeholderIndex    int
 
 	// For build
-	Query         string
-	TableRegistry *TableRegistry
-	Error         error
-	RegisteredIds map[string]bool
+	Query string
+	Error error
 
-	// map[alias]table
-	tableAliases map[string]*TableRegistry
-	// string [alias].[fieldname]
+	tableAliases    map[string]*TableRegistry
 	requestedFields []string
+
+	// Pointer to the table this query is being built on
+	TableRegistry *TableRegistry
+
+	// For build validation
+	RegisteredBuildSteps map[BuildStep]bool
+	CurrentBuildStep     BuildStep
 
 	RowsScanner       ReturnScanner
 	throwErrorOnFound bool
@@ -45,11 +48,15 @@ type InnerJoiner interface {
 	On(fieldA, fieldB string) *Query
 }
 
+type BuildStep int
+
 // Used internally to identify if a chain already has one of these
-const INTERNAL_WHERE_ID = "where"
-const INTERNAL_SET_ID = "set"
-const INTERNAL_ORDER_ID = "id"
-const INTERNAL_JOIN_ID = "join"
+const (
+	INTERNAL_WHERE_ID BuildStep = iota
+	INTERNAL_SET_ID
+	INTERNAL_ORDER_ID
+	INTERNAL_JOIN_ID
+)
 
 const FIELD_PARSER_PLACEHOLDER = "$$$"
 
@@ -122,10 +129,10 @@ func (q *Query) Set(field string, value any) *Query {
 	}
 	q.requestedFields = append(q.requestedFields, field)
 
-	if q.HasRegisteredID(INTERNAL_SET_ID) {
+	if q.ContainsBuildStep(INTERNAL_SET_ID) {
 		q.Query += ", "
 	} else {
-		q.RegisterID(INTERNAL_SET_ID)
+		q.RegisterBuildStep(INTERNAL_SET_ID)
 		q.Query += "SET "
 	}
 
@@ -134,19 +141,25 @@ func (q *Query) Set(field string, value any) *Query {
 	q.CurrentValues = append(q.CurrentValues, value)
 	return q
 }
-func (q *Query) RegisterID(id string) {
-	q.RegisteredIds[id] = true
+func (q *Query) RegisterBuildStep(step BuildStep) {
+	q.RegisteredBuildSteps[step] = true
 }
-func (q *Query) HasRegisteredID(id string) bool {
-	_, found := q.RegisteredIds[id]
+func (q *Query) ContainsBuildStep(step BuildStep) bool {
+	_, found := q.RegisteredBuildSteps[step]
 	return found
+}
+func (q *Query) SetCurrentBuildStep(step BuildStep) {
+	q.CurrentBuildStep = step
+}
+func (q *Query) GetCurrentBuildStep() BuildStep {
+	return q.CurrentBuildStep
 }
 func (q *Query) Where(fieldName string, fieldValues ...any) *Query {
 	if q.Error != nil {
 		return q
 	}
 	if q.Type == INSERT {
-		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT | UPDATE | DELETE")
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE")
 		return q
 	}
 	q.registerForValidation(fieldName)
@@ -157,11 +170,11 @@ func (q *Query) Where(fieldName string, fieldValues ...any) *Query {
 		return q
 	}
 
-	if q.HasRegisteredID(INTERNAL_WHERE_ID) {
+	if q.ContainsBuildStep(INTERNAL_WHERE_ID) {
 		q.Query += "AND "
 	} else {
 		q.Query += "WHERE "
-		q.RegisterID(INTERNAL_WHERE_ID)
+		q.RegisterBuildStep(INTERNAL_WHERE_ID)
 	}
 
 	if fieldAmount < 2 {
@@ -177,6 +190,7 @@ func (q *Query) Where(fieldName string, fieldValues ...any) *Query {
 		q.Query += fmt.Sprintf("%s IN (%s) ", fieldName, strings.Join(placeholders, ", "))
 	}
 	q.CurrentValues = append(q.CurrentValues, fieldValues...)
+	q.SetCurrentBuildStep(INTERNAL_WHERE_ID)
 	return q
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
@@ -185,10 +199,10 @@ func (q *Query) OrderAscending(fieldName string) *Query {
 	}
 
 	q.registerForValidation(fieldName)
-	if q.HasRegisteredID(INTERNAL_ORDER_ID) {
+	if q.ContainsBuildStep(INTERNAL_ORDER_ID) {
 		q.Query += fmt.Sprintf(", %s ASC", fieldName)
 	} else {
-		q.RegisterID(INTERNAL_ORDER_ID)
+		q.RegisterBuildStep(INTERNAL_ORDER_ID)
 		q.Query += fmt.Sprintf("ORDER BY %s ASC ", fieldName)
 	}
 
@@ -200,10 +214,10 @@ func (q *Query) OrderDescending(fieldName string) *Query {
 	}
 
 	q.registerForValidation(fieldName)
-	if q.HasRegisteredID(INTERNAL_ORDER_ID) {
+	if q.ContainsBuildStep(INTERNAL_ORDER_ID) {
 		q.Query += fmt.Sprintf(", %s DESC", fieldName)
 	} else {
-		q.RegisterID(INTERNAL_ORDER_ID)
+		q.RegisterBuildStep(INTERNAL_ORDER_ID)
 		q.Query += fmt.Sprintf("ORDER BY %s DESC ", fieldName)
 	}
 
@@ -232,7 +246,7 @@ func (q *Query) InnerJoin(r *TableRegistry, alias string) *InnerJoinQuery {
 	if q.Error != nil {
 		return (*InnerJoinQuery)(q)
 	}
-	q.RegisterID(INTERNAL_JOIN_ID)
+	q.RegisterBuildStep(INTERNAL_JOIN_ID)
 	q.tableAliases[alias] = r
 	q.Query += fmt.Sprintf("INNER JOIN %s AS %s ", r.TableName, alias)
 	return (*InnerJoinQuery)(q)
@@ -312,6 +326,24 @@ func (q *Query) Limit(amount int) *Query {
 	q.Query += fmt.Sprintf("LIMIT %d ", amount)
 	return q
 }
+func (q *Query) Like(regex string, caseSensitive bool) *Query {
+	if q.Error != nil {
+		return q
+	}
+	if q.Type == INSERT {
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE")
+	}
+	if q.GetCurrentBuildStep() != INTERNAL_WHERE_ID {
+		q.Error = ErrorDescription(ErrSyntax, "LIKE must be used after a WHERE clause")
+		return q
+	}
+
+	if caseSensitive {
+		q.Query += "I"
+	}
+	q.Query += fmt.Sprintf("LIKE %s ", regex)
+	return q
+}
 func newQueryOnTable(t *TableRegistry) *Query {
 	var q Query
 	if t == nil {
@@ -326,6 +358,6 @@ func newQueryOnTable(t *TableRegistry) *Query {
 	q.TableRegistry = table
 	q.placeholderIndex = 1
 	q.tableAliases = make(map[string]*TableRegistry)
-	q.RegisteredIds = make(map[string]bool)
+	q.RegisteredBuildSteps = make(map[BuildStep]bool)
 	return &q
 }
