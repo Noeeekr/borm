@@ -130,7 +130,7 @@ func (q *Query) Set(field string, value any) *Query {
 	if q.containsBuildStep(INTERNAL_SET_ID) {
 		q.Query += ", "
 	} else {
-		q.registerBuildStep(INTERNAL_SET_ID)
+		q.setCurrentBuildStep(INTERNAL_SET_ID)
 		q.Query += "SET "
 	}
 
@@ -156,7 +156,7 @@ func (q *Query) Where(fieldName string) *WhereQuery {
 		q.Query += fmt.Sprintf("AND %s ", fieldName)
 	} else {
 		q.Query += fmt.Sprintf("WHERE %s ", fieldName)
-		q.registerBuildStep(INTERNAL_WHERE_ID)
+		q.setCurrentBuildStep(INTERNAL_WHERE_ID)
 	}
 
 	q.registerForValidation(fieldName)
@@ -193,7 +193,7 @@ func (q *WhereQuery) In(fieldValues ...any) *Query {
 	q.Query += fmt.Sprintf("IN (%s) ", strings.Join(placeholders, ", "))
 
 	q.CurrentValues = append(q.CurrentValues, fieldValues...)
-	q.SetCurrentBuildStep(INTERNAL_WHERE_ID)
+	q.setCurrentBuildStep(-1)
 
 	return (*Query)(q)
 }
@@ -218,7 +218,7 @@ func (q *Query) OrderAscending(fieldName string) *Query {
 	if q.containsBuildStep(INTERNAL_ORDER_ID) {
 		q.Query += fmt.Sprintf(", %s ASC", fieldName)
 	} else {
-		q.registerBuildStep(INTERNAL_ORDER_ID)
+		q.setCurrentBuildStep(INTERNAL_ORDER_ID)
 		q.Query += fmt.Sprintf("ORDER BY %s ASC ", fieldName)
 	}
 
@@ -233,7 +233,7 @@ func (q *Query) OrderDescending(fieldName string) *Query {
 	if q.containsBuildStep(INTERNAL_ORDER_ID) {
 		q.Query += fmt.Sprintf(", %s DESC", fieldName)
 	} else {
-		q.registerBuildStep(INTERNAL_ORDER_ID)
+		q.setCurrentBuildStep(INTERNAL_ORDER_ID)
 		q.Query += fmt.Sprintf("ORDER BY %s DESC ", fieldName)
 	}
 
@@ -262,7 +262,7 @@ func (q *Query) InnerJoin(r *TableRegistry, alias string) *InnerJoinQuery {
 	if q.Error != nil {
 		return (*InnerJoinQuery)(q)
 	}
-	q.registerBuildStep(INTERNAL_JOIN_ID)
+	q.setCurrentBuildStep(INTERNAL_JOIN_ID)
 	q.tableAliases[alias] = r
 	q.Query += fmt.Sprintf("INNER JOIN %s AS %s ", r.TableName, alias)
 	return (*InnerJoinQuery)(q)
@@ -330,14 +330,12 @@ func (q *Query) Like(regex string, caseSensitive bool) *Query {
 	q.Query += fmt.Sprintf("LIKE %s ", regex)
 	return q
 }
-func (q *QueryValidator) registerBuildStep(step BuildStep) {
-	q.RegisteredBuildSteps[step] = true
-}
 func (q *QueryValidator) containsBuildStep(step BuildStep) bool {
 	_, found := q.RegisteredBuildSteps[step]
 	return found
 }
-func (q *QueryValidator) SetCurrentBuildStep(step BuildStep) {
+func (q *QueryValidator) setCurrentBuildStep(step BuildStep) {
+	q.RegisteredBuildSteps[step] = true
 	q.CurrentBuildStep = step
 }
 func (q *QueryValidator) getCurrentBuildStep() BuildStep {
