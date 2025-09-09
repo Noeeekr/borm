@@ -193,7 +193,6 @@ func (q *WhereQuery) In(fieldValues ...any) *Query {
 	q.Query += fmt.Sprintf("IN (%s) ", strings.Join(placeholders, ", "))
 
 	q.CurrentValues = append(q.CurrentValues, fieldValues...)
-	q.setCurrentBuildStep(-1)
 
 	return (*Query)(q)
 }
@@ -205,8 +204,8 @@ func (q *WhereQuery) Like(regex string, caseSensitive bool) *Query {
 	if !caseSensitive {
 		q.Query += "I"
 	}
-	q.Query += "LIKE " + regex + " "
-
+	q.Query += "LIKE '" + regex + "' "
+	q.placeholderIndex++
 	return (*Query)(q)
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
@@ -327,8 +326,15 @@ func (q *Query) Like(regex string, caseSensitive bool) *Query {
 	if caseSensitive {
 		q.Query += "I"
 	}
-	q.Query += fmt.Sprintf("LIKE %s ", regex)
+	q.Query += fmt.Sprintf("LIKE %s ", q.getCurrentPlaceholder(regex))
 	return q
+}
+
+func (q *Query) getCurrentPlaceholder(value any) string {
+	placeholder := fmt.Sprintf("$%d", q.placeholderIndex)
+	q.placeholderIndex++
+	q.CurrentValues = append(q.CurrentValues, value)
+	return placeholder
 }
 func (q *QueryValidator) containsBuildStep(step BuildStep) bool {
 	_, found := q.RegisteredBuildSteps[step]

@@ -172,6 +172,7 @@ func main() {
 		InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id").
 		Where("u.email").Equals("noeeekr@gmail.com").
 		Where("n.title").In("test notification title 2", "test notification title 1").
+		Where("n.title").Like("%notification%", false).
 		OrderAscending("n.id").
 		Scanner(scanNotifications(&notifications)),
 	)
