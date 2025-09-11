@@ -44,11 +44,9 @@ type QueryValidator struct {
 	CurrentBuildStep     BuildStep
 }
 
-type WhereQuery Query
-type InnerJoinQuery Query
-type InnerJoiner interface {
-	On(fieldA, fieldB string) *Query
-}
+type PartialWhereQuery Query
+type AditionalWhereQuery Query
+type PartialInnerJoinQuery Query
 
 // Used internally to identify if a query already has one of these
 type BuildStep int
@@ -139,19 +137,19 @@ func (q *Query) Set(field string, value any) *Query {
 	q.CurrentValues = append(q.CurrentValues, value)
 	return q
 }
-func (q *Query) Where(fieldName string) *WhereQuery {
+func (q *Query) Where(fieldName string) *PartialWhereQuery {
 	if q.Error != nil {
-		return (*WhereQuery)(q)
+		return (*PartialWhereQuery)(q)
 	}
 	if q.Type == INSERT {
 		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE")
-		return (*WhereQuery)(q)
+		return (*PartialWhereQuery)(q)
 	}
 
 	if q.containsBuildStep(INTERNAL_WHERE_ID) {
 		if q.getCurrentBuildStep() != INTERNAL_WHERE_ID {
 			q.Error = ErrorDescription(ErrSyntax, "WHERE clause must be the current build step.")
-			return (*WhereQuery)(q)
+			return (*PartialWhereQuery)(q)
 		}
 		q.Query += fmt.Sprintf("AND %s ", fieldName)
 	} else {
@@ -160,9 +158,9 @@ func (q *Query) Where(fieldName string) *WhereQuery {
 	}
 
 	q.registerForValidation(fieldName)
-	return (*WhereQuery)(q)
+	return (*PartialWhereQuery)(q)
 }
-func (q *WhereQuery) Equals(fieldValue any) *Query {
+func (q *PartialWhereQuery) Equals(fieldValue any) *Query {
 	if q.Error != nil {
 		return (*Query)(q)
 	}
@@ -173,7 +171,7 @@ func (q *WhereQuery) Equals(fieldValue any) *Query {
 	q.CurrentValues = append(q.CurrentValues, fieldValue)
 	return (*Query)(q)
 }
-func (q *WhereQuery) In(fieldValues ...any) *Query {
+func (q *PartialWhereQuery) In(fieldValues ...any) *Query {
 	if q.Error != nil {
 		return (*Query)(q)
 	}
@@ -196,7 +194,7 @@ func (q *WhereQuery) In(fieldValues ...any) *Query {
 
 	return (*Query)(q)
 }
-func (q *WhereQuery) Like(regex string, caseSensitive bool) *Query {
+func (q *PartialWhereQuery) Like(regex string, caseSensitive bool) *Query {
 	if q.Error != nil {
 		return (*Query)(q)
 	}
@@ -257,16 +255,16 @@ func (q *Query) As(alias string) *Query {
 	q.Query += fmt.Sprintf("AS %s ", alias)
 	return q
 }
-func (q *Query) InnerJoin(r *TableRegistry, alias string) *InnerJoinQuery {
+func (q *Query) InnerJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery {
 	if q.Error != nil {
-		return (*InnerJoinQuery)(q)
+		return (*PartialInnerJoinQuery)(q)
 	}
 	q.setCurrentBuildStep(INTERNAL_JOIN_ID)
 	q.tableAliases[alias] = r
 	q.Query += fmt.Sprintf("INNER JOIN %s AS %s ", r.TableName, alias)
-	return (*InnerJoinQuery)(q)
+	return (*PartialInnerJoinQuery)(q)
 }
-func (q *InnerJoinQuery) On(fieldA, fieldB string) *Query {
+func (q *PartialInnerJoinQuery) On(fieldA, fieldB string) *Query {
 	if q.Error != nil {
 		return (*Query)(q)
 	}
@@ -309,24 +307,6 @@ func (q *Query) Limit(amount int) *Query {
 	}
 
 	q.Query += fmt.Sprintf("LIMIT %d ", amount)
-	return q
-}
-func (q *Query) Like(regex string, caseSensitive bool) *Query {
-	if q.Error != nil {
-		return q
-	}
-	if q.Type == INSERT {
-		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE")
-	}
-	if q.getCurrentBuildStep() != INTERNAL_WHERE_ID {
-		q.Error = ErrorDescription(ErrSyntax, "LIKE must be used after a WHERE clause")
-		return q
-	}
-
-	if caseSensitive {
-		q.Query += "I"
-	}
-	q.Query += fmt.Sprintf("LIKE %s ", q.getCurrentPlaceholder(regex))
 	return q
 }
 
