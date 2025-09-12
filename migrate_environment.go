@@ -75,7 +75,7 @@ func (m *Commiter) migrateDatabaseUser(user *User) error {
 	}
 
 	createUserQuery := m.parseCreateUserQuery(user)
-	_, err = m.db.Exec(createUserQuery.Query)
+	_, err = m.db.Exec(createUserQuery.build())
 	if err != nil {
 		return ErrorDescription(ErrFailedOperation, err.Error())
 	}
@@ -100,7 +100,7 @@ func (m *Commiter) migrateDatabase(database *DatabaseRegistry) error {
 		}
 	}
 
-	_, err = m.db.Exec(m.parseCreateDatabaseQuery(database).Query)
+	_, err = m.db.Exec(m.parseCreateDatabaseQuery(database).build())
 	if err != nil {
 		return ErrorDescription(ErrFailedOperation, err.Error())
 	}
@@ -132,7 +132,7 @@ func (m *Commiter) dropDatabaseUsers(users ...*User) error {
 		}
 
 		dropUserQuery := m.parseDropUserQuery(user)
-		_, err = m.db.Exec(dropUserQuery.Query)
+		_, err = m.db.Exec(dropUserQuery.build())
 		if err != nil {
 			return ErrorDescription(ErrFailedOperation, err.Error())
 		}
@@ -148,16 +148,16 @@ func (m *Commiter) dropDatabase(database *DatabaseRegistry) error {
 }
 func (m *Commiter) parseCreateDatabaseQuery(database *DatabaseRegistry) *Query {
 	q := Query{}
-	q.Query = fmt.Sprintf("CREATE DATABASE %s WITH OWNER = %s;", database.Name, database.Owner.Name)
+	q.appendQueryBlock(fmt.Sprintf("CREATE DATABASE %s WITH OWNER = %s;", database.Name, database.Owner.Name))
 	return &q
 }
 func (m *Commiter) parseCreateUserQuery(user *User) *Query {
 	q := Query{}
-	q.Query = fmt.Sprintf("CREATE USER %s\n\tWITH LOGIN\n\tPASSWORD '%s';", user.Name, user.Password())
+	q.appendQueryBlock(fmt.Sprintf("CREATE USER %s\n\tWITH LOGIN\n\tPASSWORD '%s';", user.Name, user.Password()))
 	return &q
 }
 func (m *Commiter) parseDropUserQuery(user *User) *Query {
 	q := Query{}
-	q.Query = fmt.Sprintf("DROP USER %s;", user.Name)
+	q.appendQueryBlock(fmt.Sprintf("DROP USER %s;", user.Name))
 	return &q
 }

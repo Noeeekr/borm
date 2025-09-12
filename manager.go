@@ -31,11 +31,11 @@ func (m *TransactionFactory) Do(query *Query) error {
 	if query.Error != nil {
 		return query.Error
 	}
-	if err := query.validateFields(); err != nil {
+	if err := query.isValid(); err != nil {
 		return err
 	}
 
-	stmt, err := m.database.Prepare(query.Query)
+	stmt, err := m.database.Prepare(query.build())
 	if err != nil {
 		return errors.Join(ErrSyntax, err)
 	}

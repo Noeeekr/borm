@@ -95,7 +95,7 @@ func (t *TableRegistry) NeedRoles(dependencies ...TypMethods) *TableRegistry {
 func (m *TableRegistry) Update() *Query {
 	q := NewQuery(m, UPDATE)
 	q.tableAliases[""] = m
-	q.Query += fmt.Sprintf("UPDATE %s ", m.TableName)
+	q.appendQueryBlock(fmt.Sprintf("UPDATE %s", m.TableName))
 
 	return q
 }
@@ -110,8 +110,8 @@ func (m *TableRegistry) Select(fieldsName ...string) *Query {
 	q.requestedFields = append(q.requestedFields, fieldsName...)
 
 	q.Type = SELECT
-	q.Query = fmt.Sprintf("SELECT %s ", strings.Join(fieldsName, ", "))
-	q.Query += fmt.Sprintf("FROM %s ", q.TableRegistry.TableName)
+	q.appendQueryBlock(fmt.Sprintf("SELECT %s", strings.Join(fieldsName, ", ")))
+	q.appendQueryBlock(fmt.Sprintf("FROM %s", q.TableRegistry.TableName))
 	return q
 }
 
@@ -125,7 +125,7 @@ func (m *TableRegistry) Insert(fieldsName ...string) *Query {
 
 	q.Type = INSERT
 	q.requiredValueLength = len(fieldsName)
-	q.Query = fmt.Sprintf("INSERT INTO %s (%s) ", q.TableRegistry.TableName, strings.Join(fieldsName, ", "))
+	q.appendQueryBlock(fmt.Sprintf("INSERT INTO %s (%s)", q.TableRegistry.TableName, strings.Join(fieldsName, ", ")))
 	return q
 }
 func (m *TableRegistry) Delete() *Query {
@@ -134,7 +134,7 @@ func (m *TableRegistry) Delete() *Query {
 		return q
 	}
 	q.tableAliases[""] = m
-	q.Query += fmt.Sprintf("DELETE FROM %s ", q.TableRegistry.TableName)
+	q.appendQueryBlock(fmt.Sprintf("DELETE FROM %s", q.TableRegistry.TableName))
 	return q
 }
 

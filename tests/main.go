@@ -63,7 +63,7 @@ func main() {
 	// Registers default postgres database to migrate stuff through it
 	commiter, err := borm.Connect(borm.RegisterDatabase("postgres", "db", borm.RegisterUser("postgres", "noeeekr")))
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
@@ -72,7 +72,7 @@ func main() {
 	DEVELOPMENT_DATABASE := commiter.RegisterDatabase("DEVELOPMENT", DEVELOPMENT_USER)
 	err = commiter.MigrateUsers(DEVELOPMENT_USER)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 	development, err := commiter.MigrateDatabase(DEVELOPMENT_DATABASE)
@@ -87,13 +87,13 @@ func main() {
 
 	err = development.MigrateRelations()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
 	transaction, err := development.StartTx()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 	var firstUser int
@@ -104,7 +104,7 @@ func main() {
 		Returning("id").Scanner(scanInt(&firstUser)),
 	)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 	var secondUser int
@@ -121,7 +121,19 @@ func main() {
 		Returning("id").Scanner(scanInt(&secondUser)),
 	)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(TABLE_USERS.
+			Insert("email", "password", "name", "role").
+			Values(
+				"email1@gmail.com", "123456", "andre", STUDENT,
+				"email2@gmail.com", "123456", "peter", STUDENT,
+				"email3@gmail.com", "123456", "gustav", STUDENT,
+				"email4@gmail.com", "123456", "mason", STUDENT,
+				"email5@gmail.com", "123456", "jorge", STUDENT,
+				"email6@gmail.com", "123456", "alfredo", STUDENT,
+			).
+			Returning("id").Scanner(scanInt(&secondUser)).CurrentValues...,
+		)
+		fmt.Println(err.Error())
 		return
 	}
 	var notificationId int
@@ -131,7 +143,7 @@ func main() {
 		Returning("id").Scanner(scanInt(&notificationId)),
 	)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 	err = transaction.Do(TABLE_USERS_NOTIFICATIONS.
@@ -139,7 +151,7 @@ func main() {
 		Values(firstUser, notificationId),
 	)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 	err = transaction.Do(TABLE_NOTIFICATIONS.
@@ -148,7 +160,7 @@ func main() {
 		Returning("id").Scanner(scanInt(&notificationId)),
 	)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 	err = transaction.Do(TABLE_USERS_NOTIFICATIONS.
@@ -156,28 +168,29 @@ func main() {
 		Values(firstUser, notificationId),
 	)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 	err = transaction.Commit()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 
 	var notifications []*Notifications
-	err = development.Do(TABLE_USERS.
-		Select("n.id", "n.title", "n.description").As("u").
-		InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id").
-		InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id").
-		Where("u.email").Equals("noeeekr@gmail.com").
-		Where("n.title").In("test notification title 2", "test notification title 1").
-		Where("n.title").Like("%notification%", false).
-		OrderAscending("n.id").
-		Scanner(scanNotifications(&notifications)),
-	)
+	query := TABLE_USERS.Select("n.id", "n.title", "n.description").As("u")
+	query.InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id")
+	query.InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id")
+	query.Compose(
+		query.Where("u.email").Equals("noeeekr@gmail.com").
+			And("n.title").In("test notification title 2", "test notification title 1").
+			And("n.title").Like("%notification%", false))
+	query.OrderAscending("n.id")
+	query.Scanner(scanNotifications(&notifications))
+
+	err = development.Do(query)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 	var userAmountFound int
@@ -188,7 +201,7 @@ func main() {
 		Scanner(RowAmount(&userAmountFound)),
 	)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 
@@ -201,7 +214,7 @@ func main() {
 		Scanner(RowAmount(&whereInFoundAmount)),
 	)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 

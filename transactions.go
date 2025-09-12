@@ -32,7 +32,7 @@ func NewTransaction(tx *sql.Tx) *Transaction {
 }
 
 func (t *Transaction) Do(query *Query) error {
-	if err := query.validateFields(); err != nil {
+	if err := query.isValid(); err != nil {
 		return err
 	}
 	if query == nil {
@@ -42,11 +42,11 @@ func (t *Transaction) Do(query *Query) error {
 		return query.Error
 	}
 
-	stmt, err := t.tx.Prepare(query.Query)
+	stmt, err := t.tx.Prepare(query.build())
 	if err != nil {
 		err := ErrorJoin(ErrSyntax, err)
 		if Settings().Environment().GetEnvironment() == DEBUGGING {
-			ErrorJoin(err, errors.New("\n[Query]: "+query.Query))
+			ErrorJoin(err, errors.New("\n[Query]: "+query.build()))
 		}
 		return err
 	}

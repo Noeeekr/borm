@@ -23,8 +23,8 @@ type Query struct {
 	placeholderIndex    int
 
 	// For build
-	Query string
-	Error error
+	Blocks []string
+	Error  error
 
 	// For build validation
 	*QueryValidator
@@ -44,15 +44,29 @@ type QueryValidator struct {
 	CurrentBuildStep     BuildStep
 }
 
-type PartialWhereQuery Query
-type AditionalWhereQuery Query
-type PartialInnerJoinQuery Query
+type PartialInnerJoinQuery struct {
+	innerQuery *Query
+}
+type PartialWhereQuery struct {
+	innerQuery *Query
+}
+type AditionalWhereQuery struct {
+	*Query
+}
 
 // Used internally to identify if a query already has one of these
 type BuildStep int
 
+type InternalBitwiseOperator string
+
+const (
+	INTERNAL_OPERATOR_OR  InternalBitwiseOperator = "OR"
+	INTERNAL_OPERATOR_AND InternalBitwiseOperator = "AND"
+)
+
 const (
 	INTERNAL_WHERE_ID BuildStep = iota
+	INTERNAL_COMPOSED_WHERE_ID
 	INTERNAL_SET_ID
 	INTERNAL_ORDER_ID
 	INTERNAL_JOIN_ID
@@ -100,19 +114,24 @@ func (q *Query) Values(values ...any) *Query {
 		return q
 	}
 
-	// Create a postgres value placeholder
-	fields := make([]string, valueAmount/q.requiredValueLength)
-	for i := range fields {
-		fieldValues := make([]string, q.requiredValueLength)
-		for j := range fieldValues {
-			fieldValues[j] = fmt.Sprintf("$%d", q.placeholderIndex)
-			q.placeholderIndex++
+	/*
+	 */
+	// Creates placeholders
+	valueBlock := make([]string, valueAmount/q.requiredValueLength)
+	valuesIndex := 0
+	for i := range valueBlock {
+		partialValueBlock := make([]string, q.requiredValueLength)
+		for j := range partialValueBlock {
+			partialValueBlock[j] = q.usePlaceholder(values[valuesIndex])
+			valuesIndex++
 		}
-		fields[i] = fmt.Sprintf("(%s)", strings.Join(fieldValues, ", "))
+		// formats to (a, b, c, ...)
+		valueBlock[i] = fmt.Sprintf("(%s)", strings.Join(partialValueBlock, ", "))
 	}
 
-	q.CurrentValues = values
-	q.Query += fmt.Sprintf("VALUES %s ", strings.Join(fields, ", "))
+	// formats to Values (a, b, c, ...) (e, f, g, ...) ...
+	valuesBlock := fmt.Sprintf("VALUES %s", strings.Join(valueBlock, ", "))
+	q.appendQueryBlock(valuesBlock)
 	return q
 }
 func (q *Query) Set(field string, value any) *Query {
@@ -126,85 +145,108 @@ func (q *Query) Set(field string, value any) *Query {
 	q.requestedFields = append(q.requestedFields, field)
 
 	if q.containsBuildStep(INTERNAL_SET_ID) {
-		q.Query += ", "
+		q.appendQueryBlock(",")
 	} else {
 		q.setCurrentBuildStep(INTERNAL_SET_ID)
-		q.Query += "SET "
+		q.appendQueryBlock("SET")
 	}
 
-	q.Query += fmt.Sprintf("%s = $%d", field, q.placeholderIndex)
-	q.placeholderIndex++
-	q.CurrentValues = append(q.CurrentValues, value)
+	q.appendQueryBlock(fmt.Sprintf("%s = %s", field, q.usePlaceholder(value)))
 	return q
 }
 func (q *Query) Where(fieldName string) *PartialWhereQuery {
-	if q.Error != nil {
-		return (*PartialWhereQuery)(q)
-	}
-	if q.Type == INSERT {
-		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE")
-		return (*PartialWhereQuery)(q)
-	}
-
-	if q.containsBuildStep(INTERNAL_WHERE_ID) {
-		if q.getCurrentBuildStep() != INTERNAL_WHERE_ID {
-			q.Error = ErrorDescription(ErrSyntax, "WHERE clause must be the current build step.")
-			return (*PartialWhereQuery)(q)
+	return q.where(INTERNAL_OPERATOR_AND, fieldName)
+}
+func (p *PartialWhereQuery) Equals(fieldValue any) *AditionalWhereQuery {
+	if p.innerQuery.Error != nil {
+		return &AditionalWhereQuery{
+			Query: p.innerQuery,
 		}
-		q.Query += fmt.Sprintf("AND %s ", fieldName)
-	} else {
-		q.Query += fmt.Sprintf("WHERE %s ", fieldName)
-		q.setCurrentBuildStep(INTERNAL_WHERE_ID)
 	}
 
-	q.registerForValidation(fieldName)
-	return (*PartialWhereQuery)(q)
-}
-func (q *PartialWhereQuery) Equals(fieldValue any) *Query {
-	if q.Error != nil {
-		return (*Query)(q)
+	p.innerQuery.replaceCurrentQueryBlock(
+		fmt.Sprintf(
+			"%s = %s",
+			p.innerQuery.getCurrentQueryBlock(),
+			p.innerQuery.usePlaceholder(fieldValue),
+		),
+	)
+	return &AditionalWhereQuery{
+		Query: p.innerQuery,
 	}
-
-	q.Query += fmt.Sprintf("= $%d ", q.placeholderIndex)
-	q.placeholderIndex++
-
-	q.CurrentValues = append(q.CurrentValues, fieldValue)
-	return (*Query)(q)
 }
-func (q *PartialWhereQuery) In(fieldValues ...any) *Query {
-	if q.Error != nil {
-		return (*Query)(q)
+func (q *AditionalWhereQuery) And(fieldName string) *PartialWhereQuery {
+	return q.where(INTERNAL_OPERATOR_AND, fieldName)
+}
+func (q *AditionalWhereQuery) Or(fieldName string) *PartialWhereQuery {
+	return q.where(INTERNAL_OPERATOR_OR, fieldName)
+}
+func (p *PartialWhereQuery) In(fieldValues ...any) *AditionalWhereQuery {
+	if p.innerQuery.Error != nil {
+		return &AditionalWhereQuery{
+			Query: p.innerQuery,
+		}
 	}
 
 	fieldAmount := len(fieldValues)
 	if fieldAmount == 0 {
-		q.Error = ErrorDescription(ErrSyntax, "Where clause shouldn't be empty and can cause unwanted returns. Consider removing it if it is intended.")
-		return (*Query)(q)
+		p.innerQuery.Error = ErrorDescription(ErrSyntax, "Where clause shouldn't be empty and can cause unwanted returns. Consider removing it if it is intended.")
+		return &AditionalWhereQuery{
+			Query: p.innerQuery,
+		}
 	}
 
 	// formats to: A in ($1, $2, $3, ...)
 	placeholders := make([]string, fieldAmount)
 	for i := range fieldValues {
-		placeholders[i] = fmt.Sprintf("$%d", q.placeholderIndex)
-		q.placeholderIndex++
+		placeholders[i] = fmt.Sprintf("%s", p.innerQuery.usePlaceholder(fieldValues[i]))
 	}
-	q.Query += fmt.Sprintf("IN (%s) ", strings.Join(placeholders, ", "))
 
-	q.CurrentValues = append(q.CurrentValues, fieldValues...)
+	p.innerQuery.replaceCurrentQueryBlock(
+		fmt.Sprintf(
+			"%s IN (%s)",
+			p.innerQuery.getCurrentQueryBlock(),
+			strings.Join(placeholders, ", "),
+		),
+	)
 
-	return (*Query)(q)
+	return &AditionalWhereQuery{
+		Query: p.innerQuery,
+	}
 }
-func (q *PartialWhereQuery) Like(regex string, caseSensitive bool) *Query {
-	if q.Error != nil {
-		return (*Query)(q)
+func (p *PartialWhereQuery) Like(regex string, caseSensitive bool) *AditionalWhereQuery {
+	if p.innerQuery.Error != nil {
+		return &AditionalWhereQuery{
+			Query: p.innerQuery,
+		}
 	}
 
+	likeBlock := "LIKE '" + regex + "'"
 	if !caseSensitive {
-		q.Query += "I"
+		likeBlock = "I" + likeBlock
 	}
-	q.Query += "LIKE '" + regex + "' "
-	q.placeholderIndex++
-	return (*Query)(q)
+
+	p.innerQuery.replaceCurrentQueryBlock(
+		fmt.Sprintf("%s %s",
+			p.innerQuery.getCurrentQueryBlock(),
+			likeBlock,
+		),
+	)
+	return &AditionalWhereQuery{
+		Query: p.innerQuery,
+	}
+}
+
+/*
+Perfoms composed where like:
+
+	WHERE (field = value, field2 IN (value2, value3, value4))
+
+First parameter is the where clause of the query that must be executed in composed
+*/
+func (q *Query) Compose(qr *AditionalWhereQuery) *Query {
+	q.replaceCurrentQueryBlock(fmt.Sprintf("(%s)", q.getCurrentQueryBlock()))
+	return q
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
 	if q.Error != nil {
@@ -213,10 +255,10 @@ func (q *Query) OrderAscending(fieldName string) *Query {
 
 	q.registerForValidation(fieldName)
 	if q.containsBuildStep(INTERNAL_ORDER_ID) {
-		q.Query += fmt.Sprintf(", %s ASC", fieldName)
+		q.appendQueryBlock(fmt.Sprintf(", %s ASC", fieldName))
 	} else {
 		q.setCurrentBuildStep(INTERNAL_ORDER_ID)
-		q.Query += fmt.Sprintf("ORDER BY %s ASC ", fieldName)
+		q.appendQueryBlock(fmt.Sprintf("ORDER BY %s ASC", fieldName))
 	}
 
 	return q
@@ -228,10 +270,10 @@ func (q *Query) OrderDescending(fieldName string) *Query {
 
 	q.registerForValidation(fieldName)
 	if q.containsBuildStep(INTERNAL_ORDER_ID) {
-		q.Query += fmt.Sprintf(", %s DESC", fieldName)
+		q.appendQueryBlock(fmt.Sprintf(", %s DESC", fieldName))
 	} else {
 		q.setCurrentBuildStep(INTERNAL_ORDER_ID)
-		q.Query += fmt.Sprintf("ORDER BY %s DESC ", fieldName)
+		q.appendQueryBlock(fmt.Sprintf("ORDER BY %s DESC", fieldName))
 	}
 
 	return q
@@ -252,24 +294,28 @@ func (q *Query) As(alias string) *Query {
 	q.tableAliases[alias] = q.tableAliases[""]
 	delete(q.tableAliases, "")
 
-	q.Query += fmt.Sprintf("AS %s ", alias)
+	q.appendQueryBlock(fmt.Sprintf("AS %s", alias))
 	return q
 }
 func (q *Query) InnerJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery {
 	if q.Error != nil {
-		return (*PartialInnerJoinQuery)(q)
+		return &PartialInnerJoinQuery{
+			innerQuery: q,
+		}
 	}
 	q.setCurrentBuildStep(INTERNAL_JOIN_ID)
 	q.tableAliases[alias] = r
-	q.Query += fmt.Sprintf("INNER JOIN %s AS %s ", r.TableName, alias)
-	return (*PartialInnerJoinQuery)(q)
+	q.appendQueryBlock(fmt.Sprintf("INNER JOIN %s AS %s", r.TableName, alias))
+	return &PartialInnerJoinQuery{
+		innerQuery: q,
+	}
 }
 func (q *PartialInnerJoinQuery) On(fieldA, fieldB string) *Query {
-	if q.Error != nil {
-		return (*Query)(q)
+	if q.innerQuery.Error != nil {
+		return q.innerQuery
 	}
-	q.Query += fmt.Sprintf("ON %s = %s ", fieldA, fieldB)
-	return (*Query)(q)
+	q.innerQuery.appendQueryBlock(fmt.Sprintf("ON %s = %s", fieldA, fieldB))
+	return q.innerQuery
 }
 func (q *Query) Returning(fields ...string) *Query {
 	if q.Error != nil {
@@ -281,7 +327,7 @@ func (q *Query) Returning(fields ...string) *Query {
 	}
 
 	q.requestedFields = append(q.requestedFields, fields...)
-	q.Query += fmt.Sprintf("RETURNING %s ", strings.Join(fields, ", "))
+	q.appendQueryBlock(fmt.Sprintf("RETURNING %s", strings.Join(fields, ", ")))
 	return q
 }
 
@@ -294,7 +340,7 @@ func (q *Query) Offset(amount int) *Query {
 		return q
 	}
 
-	q.Query += fmt.Sprintf("OFFSET %d ", amount)
+	q.appendQueryBlock(fmt.Sprintf("OFFSET %d", amount))
 	return q
 }
 func (q *Query) Limit(amount int) *Query {
@@ -306,15 +352,72 @@ func (q *Query) Limit(amount int) *Query {
 		return q
 	}
 
-	q.Query += fmt.Sprintf("LIMIT %d ", amount)
+	q.appendQueryBlock(fmt.Sprintf("LIMIT %d", amount))
 	return q
 }
+func (q *Query) where(operator InternalBitwiseOperator, fieldName string) *PartialWhereQuery {
+	if q.Error != nil {
+		return &PartialWhereQuery{
+			innerQuery: q,
+		}
+	}
+	if q.Type == INSERT {
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE")
+		return &PartialWhereQuery{
+			innerQuery: q,
+		}
+	}
 
-func (q *Query) getCurrentPlaceholder(value any) string {
+	if q.containsBuildStep(INTERNAL_WHERE_ID) {
+		if q.getCurrentBuildStep() != INTERNAL_WHERE_ID {
+			q.Error = ErrorDescription(ErrSyntax, "WHERE clause must be the current build step.")
+			return &PartialWhereQuery{
+				q,
+			}
+		}
+		q.replaceCurrentQueryBlock(fmt.Sprintf("%s %s %s", q.getCurrentQueryBlock(), operator, fieldName))
+	} else {
+		// Where(name).Equals(valor).And(name2).Equals(valor2) => translates to "nome1 = valor1 AND nome2 = valor2"
+		// Where(name).Equals(valor).Or(name2).Equals(valor2)  => translates to "nome1 = valor1 OR  nome2 = valor2"
+		// Compose(q.Where(name).Equals(valor).And(name2).Equals(valor2))
+		//[WHERE][valor] e [AND][valor]  =>  [WHERE][(nome EQUALS valor][AND nome2 EQUALS Valor2)]
+		q.appendQueryBlock("WHERE")
+		q.appendQueryBlock(fieldName)
+		q.setCurrentBuildStep(INTERNAL_WHERE_ID)
+	}
+
+	q.registerForValidation(fieldName)
+	return &PartialWhereQuery{
+		q,
+	}
+}
+func (q *Query) replaceCurrentQueryBlock(query string) {
+	if len(q.Blocks) == 0 {
+		q.Blocks = append(q.Blocks, query)
+	}
+	q.Blocks[len(q.Blocks)-1] = query
+}
+func (q *Query) appendQueryBlock(query string) {
+	q.Blocks = append(q.Blocks, query)
+}
+func (q *Query) getCurrentQueryBlock() string {
+	if len(q.Blocks) == 0 {
+		return ""
+	}
+	// Removes the white space added by default
+	return q.Blocks[len(q.Blocks)-1]
+}
+func (q *Query) usePlaceholder(value any) string {
 	placeholder := fmt.Sprintf("$%d", q.placeholderIndex)
 	q.placeholderIndex++
 	q.CurrentValues = append(q.CurrentValues, value)
 	return placeholder
+}
+func (q *Query) build() string {
+	if Settings().Environment().GetEnvironment() == DEBUGGING {
+		fmt.Printf("[%s]\n", strings.Join(q.Blocks, "]["))
+	}
+	return strings.Join(q.Blocks, " ")
 }
 func (q *QueryValidator) containsBuildStep(step BuildStep) bool {
 	_, found := q.RegisteredBuildSteps[step]
@@ -327,7 +430,7 @@ func (q *QueryValidator) setCurrentBuildStep(step BuildStep) {
 func (q *QueryValidator) getCurrentBuildStep() BuildStep {
 	return q.CurrentBuildStep
 }
-func (q *QueryValidator) validateFields() error {
+func (q *QueryValidator) isValid() error {
 	var fields []string
 	for _, fieldName := range q.requestedFields {
 		var table *TableRegistry = q.TableRegistry
@@ -375,7 +478,7 @@ func newUnsafeQuery(typ QueryType, str string) *Query {
 	q.QueryValidator = newQueryValidator(nil)
 	q.Type = typ
 	q.placeholderIndex = 1
-	q.Query = str
+	q.appendQueryBlock(str)
 	return &q
 }
 func NewQuery(t *TableRegistry, typ QueryType) *Query {
