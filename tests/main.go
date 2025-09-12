@@ -181,10 +181,12 @@ func main() {
 	query := TABLE_USERS.Select("n.id", "n.title", "n.description").As("u")
 	query.InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id")
 	query.InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id")
-	query.Compose(
+	query.Where("u.email").Like("%noe%", false)
+	query.AndComposed(
 		query.Where("u.email").Equals("noeeekr@gmail.com").
 			And("n.title").In("test notification title 2", "test notification title 1").
-			And("n.title").Like("%notification%", false))
+			And("n.title").Like("%notification%", false)).
+		And("n.title").Like("%TEST%", false)
 	query.OrderAscending("n.id")
 	query.Scanner(scanNotifications(&notifications))
 

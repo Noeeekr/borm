@@ -60,8 +60,9 @@ type BuildStep int
 type InternalBitwiseOperator string
 
 const (
-	INTERNAL_OPERATOR_OR  InternalBitwiseOperator = "OR"
-	INTERNAL_OPERATOR_AND InternalBitwiseOperator = "AND"
+	INTERNAL_OPERATOR_NONE InternalBitwiseOperator = ""
+	INTERNAL_OPERATOR_OR   InternalBitwiseOperator = "OR"
+	INTERNAL_OPERATOR_AND  InternalBitwiseOperator = "AND"
 )
 
 const (
@@ -155,7 +156,7 @@ func (q *Query) Set(field string, value any) *Query {
 	return q
 }
 func (q *Query) Where(fieldName string) *PartialWhereQuery {
-	return q.where(INTERNAL_OPERATOR_AND, fieldName)
+	return q.where(INTERNAL_OPERATOR_AND, fieldName, false)
 }
 func (p *PartialWhereQuery) Equals(fieldValue any) *AditionalWhereQuery {
 	if p.innerQuery.Error != nil {
@@ -176,10 +177,10 @@ func (p *PartialWhereQuery) Equals(fieldValue any) *AditionalWhereQuery {
 	}
 }
 func (q *AditionalWhereQuery) And(fieldName string) *PartialWhereQuery {
-	return q.where(INTERNAL_OPERATOR_AND, fieldName)
+	return q.where(INTERNAL_OPERATOR_AND, fieldName, true)
 }
 func (q *AditionalWhereQuery) Or(fieldName string) *PartialWhereQuery {
-	return q.where(INTERNAL_OPERATOR_OR, fieldName)
+	return q.where(INTERNAL_OPERATOR_OR, fieldName, true)
 }
 func (p *PartialWhereQuery) In(fieldValues ...any) *AditionalWhereQuery {
 	if p.innerQuery.Error != nil {
@@ -244,8 +245,15 @@ Perfoms composed where like:
 
 First parameter is the where clause of the query that must be executed in composed
 */
-func (q *Query) Compose(qr *AditionalWhereQuery) *AditionalWhereQuery {
-	q.replaceCurrentQueryBlock(fmt.Sprintf("(%s)", q.getCurrentQueryBlock()))
+
+// Same as OR but uses composed values
+func (q *Query) OrComposed(qr *AditionalWhereQuery) *AditionalWhereQuery {
+	q.replaceCurrentQueryBlock(fmt.Sprintf("%s (%s)", INTERNAL_OPERATOR_OR, q.getCurrentQueryBlock()))
+	return qr
+}
+
+func (q *Query) AndComposed(qr *AditionalWhereQuery) *AditionalWhereQuery {
+	q.replaceCurrentQueryBlock(fmt.Sprintf("%s (%s)", INTERNAL_OPERATOR_AND, q.getCurrentQueryBlock()))
 	return qr
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
@@ -355,7 +363,11 @@ func (q *Query) Limit(amount int) *Query {
 	q.appendQueryBlock(fmt.Sprintf("LIMIT %d", amount))
 	return q
 }
-func (q *Query) where(operator InternalBitwiseOperator, fieldName string) *PartialWhereQuery {
+
+// First parameter specifies the operator to be used to append with the previous where rule if exists.
+// Second parameter is the fieldName that the rule will validate into.
+// Third parameter tells if the query should merge to the previous one or creating new block, if true the operator will be used for that reason.
+func (q *Query) where(operator InternalBitwiseOperator, fieldName string, merge bool) *PartialWhereQuery {
 	if q.Error != nil {
 		return &PartialWhereQuery{
 			innerQuery: q,
@@ -368,19 +380,28 @@ func (q *Query) where(operator InternalBitwiseOperator, fieldName string) *Parti
 		}
 	}
 
-	if q.containsBuildStep(INTERNAL_WHERE_ID) {
-		if q.getCurrentBuildStep() != INTERNAL_WHERE_ID {
-			q.Error = ErrorDescription(ErrSyntax, "WHERE clause must be the current build step.")
-			return &PartialWhereQuery{
-				q,
-			}
+	if q.getCurrentBuildStep() == INTERNAL_WHERE_ID {
+		if merge {
+			q.replaceCurrentQueryBlock(fmt.Sprintf("%s %s %s", q.getCurrentQueryBlock(), operator, fieldName))
+		} else {
+			q.appendQueryBlock(fieldName)
 		}
-		q.replaceCurrentQueryBlock(fmt.Sprintf("%s %s %s", q.getCurrentQueryBlock(), operator, fieldName))
 	} else {
-		// Where(name).Equals(valor).And(name2).Equals(valor2) => translates to "nome1 = valor1 AND nome2 = valor2"
-		// Where(name).Equals(valor).Or(name2).Equals(valor2)  => translates to "nome1 = valor1 OR  nome2 = valor2"
-		// Compose(q.Where(name).Equals(valor).And(name2).Equals(valor2))
-		//[WHERE][valor] e [AND][valor]  =>  [WHERE][(nome EQUALS valor][AND nome2 EQUALS Valor2)]
+		/*
+			Where(nome).Equals(valor).                          [Where][Nome = Valor]
+			Or(nome).In(valor1, valor2, valor3).                [Where][Nome = Valor or Nome in (Valor1, Valor2, Valor3)]
+			Compose(
+				Where(nome).Equals(valor).
+				And(nome).Equals(valor)
+			).
+			And(
+				Compose(
+					Where(nome).Equals(valor).
+					And(nome).In(valor1, valor2, valor3)
+				)
+			)
+			And(nome).Equals(valor).
+		*/
 		q.appendQueryBlock("WHERE")
 		q.appendQueryBlock(fieldName)
 		q.setCurrentBuildStep(INTERNAL_WHERE_ID)
