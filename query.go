@@ -244,9 +244,9 @@ Perfoms composed where like:
 
 First parameter is the where clause of the query that must be executed in composed
 */
-func (q *Query) Compose(qr *AditionalWhereQuery) *Query {
+func (q *Query) Compose(qr *AditionalWhereQuery) *AditionalWhereQuery {
 	q.replaceCurrentQueryBlock(fmt.Sprintf("(%s)", q.getCurrentQueryBlock()))
-	return q
+	return qr
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
 	if q.Error != nil {
