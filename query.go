@@ -189,6 +189,8 @@ func (p *PartialWhereQuery) In(fieldValues ...any) *AditionalWhereQuery {
 		}
 	}
 
+	// IN (nil, value) -> calls Or
+	// Equals(nil)  -> uses IS NULL instead of = value
 	fieldAmount := len(fieldValues)
 	if fieldAmount == 0 {
 		p.innerQuery.Error = ErrorDescription(ErrSyntax, "Where clause shouldn't be empty and can cause unwanted returns. Consider removing it if it is intended.")
@@ -208,6 +210,24 @@ func (p *PartialWhereQuery) In(fieldValues ...any) *AditionalWhereQuery {
 			"%s IN (%s)",
 			p.innerQuery.getCurrentQueryBlock(),
 			strings.Join(placeholders, ", "),
+		),
+	)
+
+	return &AditionalWhereQuery{
+		Query: p.innerQuery,
+	}
+}
+func (p *PartialWhereQuery) IsNull() *AditionalWhereQuery {
+	if p.innerQuery.Error != nil {
+		return &AditionalWhereQuery{
+			Query: p.innerQuery,
+		}
+	}
+
+	p.innerQuery.replaceCurrentQueryBlock(
+		fmt.Sprintf(
+			"%s IS NULL",
+			p.innerQuery.getCurrentQueryBlock(),
 		),
 	)
 

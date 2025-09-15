@@ -23,10 +23,11 @@ type Id struct {
 type Users struct {
 	*Id
 
-	Name     string   `borm:"(CONSTRAINTS, NOT NULL)"`
-	Email    string   `borm:"(CONSTRAINTS, NOT NULL, UNIQUE)"`
-	Password string   `borm:"(CONSTRAINTS, NOT NULL)"`
-	Role     UserRole `borm:"(CONSTRAINTS, NOT NULL) (TYPE, user_role)"`
+	Name     string    `borm:"(CONSTRAINTS, NOT NULL)"`
+	Email    string    `borm:"(CONSTRAINTS, NOT NULL, UNIQUE)"`
+	Password string    `borm:"(CONSTRAINTS, NOT NULL)"`
+	Role     *UserRole `borm:"(TYPE, user_role)"`
+
 	// borm:"TYPE<serial> NAME<issuer_id> CONSTRAINTS<ignore, not null, unique, default 'abcd'> "
 	// borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"
 	// borm:"type is serial, constraints are primary key and not null and default 'abcd', name is issuer_id"
@@ -102,6 +103,17 @@ func main() {
 		Insert("email", "password", "name", "role").
 		Values("noeeekr@gmail.com", "noeeekr", "noeeekr", ADMIN).
 		Returning("id").Scanner(scanInt(&firstUser)),
+	)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+
+	var nullRoleUser int
+	err = transaction.Do(TABLE_USERS.
+		Insert("email", "password", "name", "role").
+		Values("noroleuser@gmail.com", "noroleuser", "noroleuser", nil).
+		Returning("id").Scanner(scanInt(&nullRoleUser)),
 	)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -220,10 +232,21 @@ func main() {
 		return
 	}
 
+	var nullUserName string
+	err = development.Do(TABLE_USERS.
+		Select("name").
+		Where("role").IsNull().
+		Scanner(scanString(&nullUserName)),
+	)
+	if err != nil || nullUserName == "" {
+		fmt.Println(err.Error())
+	}
+
 	fmt.Println("[Query Using Where (A) IN (A, B, C, ...)]")
 	fmt.Println("\t[Expected Amount]:", len(whereInExpectedReturn))
 	fmt.Println("\t[Found Amount]:", whereInFoundAmount)
-
+	fmt.Println("[Query SELECT name WHERE role IS NULL]")
+	fmt.Println("\t[user with null role name]:", nullUserName)
 	fmt.Println("[Issuer ID Returned From Insert]: ", firstUser)
 	fmt.Println("[Notification Rows found]: ", len(notifications))
 	for _, notification := range notifications {
@@ -231,6 +254,21 @@ func main() {
 	}
 }
 
+func scanString(str *string) borm.ReturnScanner {
+	return func(rows *sql.Rows) (bool, error) {
+		defer rows.Close()
+
+		if rows.Next() {
+			if err := rows.Scan(str); err != nil {
+				return false, err
+			}
+		} else {
+			return false, borm.ErrorDescription(borm.ErrNotFound, "No rows found")
+		}
+
+		return true, nil
+	}
+}
 func scanInt(i *int) borm.ReturnScanner {
 	return func(rows *sql.Rows) (bool, error) {
 		defer rows.Close()
