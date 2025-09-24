@@ -202,7 +202,7 @@ func (p *PartialWhereQuery) In(fieldValues ...any) *AditionalWhereQuery {
 	// formats to: A in ($1, $2, $3, ...)
 	placeholders := make([]string, fieldAmount)
 	for i := range fieldValues {
-		placeholders[i] = fmt.Sprintf("%s", p.innerQuery.usePlaceholder(fieldValues[i]))
+		placeholders[i] = p.innerQuery.usePlaceholder(fieldValues[i])
 	}
 
 	p.innerQuery.replaceCurrentQueryBlock(
@@ -266,14 +266,53 @@ Perfoms composed where like:
 First parameter is the where clause of the query that must be executed in composed
 */
 
-// Same as OR but uses composed values
+/*
+1. 	SELECT(fields...)          	 						=>   Appends the fields to validation
+2. 		AS("alias")										=>   Appends an alias to all fields without one
+3. 	INNERJOIN(TABLE)			  	 					=>   Creates the join clause
+4. 		ON(field, field)           	 					=>	 Appends the condition of the join *Accepts two field names that must contain the aliases
+5. 	WHERE(field)               	 						=>   Creates a where clause
+6. 		Equals(value) / Like("text") / IN(values...) 	=>   Appends the rest of the condition
+7. 	And(field) / Or(field)								=>   Appends to the previous where clause
+8. 		Equals(value) / Like("text") / IN(values...) 	=>   Appends the rest of the condition
+9.  OrComposed()
+10. And(field)
+11. In(a, b, c, ...)
+
+1. [SELECT a, b, c, ...]
+2. [SELECT a, b, c, ...][AS alias]
+3. [SELECT a, b, c, ...][AS alias][INNER JOIN table]
+4. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field]
+5. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][field]
+6. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][field IN (a, b, c, ...)]
+	* In/Equals/Like should always append to last block
+7. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][field IN (a, b, c, ...)][And][field]
+8. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][field IN (a, b, c, ...) And field = value]
+	* And/Or coming from where should append to last block, compose should put the build step to compose       => Appends a condition in the same block that can be used in compose()
+	* And/Or coming from compose should create two new blocks, should put the build step back to where    => First block separates the AND, OR. The second creates a new condition chain in a new block that can be used in compose()
+
+* Compose
+9. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][(field IN (a, b, c, ...) And field = value)]
+	-> Should be able to use and
+	-> Should be able to use or
+	-> Should be able to compose again
+
+*Checar caso composed where sem where - isso é um problema sim não duvide
+
+*/
+
 func (q *Query) OrComposed(qr *AditionalWhereQuery) *AditionalWhereQuery {
-	q.replaceCurrentQueryBlock(fmt.Sprintf("%s (%s)", INTERNAL_OPERATOR_OR, q.getCurrentQueryBlock()))
+	newChainBlock := "(" + q.getCurrentQueryBlock() + ")"
+	q.replaceCurrentQueryBlock(string(INTERNAL_OPERATOR_OR))
+	q.appendQueryBlock(newChainBlock)
+	q.setCurrentBuildStep(INTERNAL_COMPOSED_WHERE_ID)
 	return qr
 }
-
 func (q *Query) AndComposed(qr *AditionalWhereQuery) *AditionalWhereQuery {
-	q.replaceCurrentQueryBlock(fmt.Sprintf("%s (%s)", INTERNAL_OPERATOR_AND, q.getCurrentQueryBlock()))
+	newChainBlock := "(" + q.getCurrentQueryBlock() + ")"
+	q.replaceCurrentQueryBlock(string(INTERNAL_OPERATOR_AND))
+	q.appendQueryBlock(newChainBlock)
+	q.setCurrentBuildStep(INTERNAL_COMPOSED_WHERE_ID)
 	return qr
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
@@ -384,6 +423,7 @@ func (q *Query) Limit(amount int) *Query {
 	return q
 }
 
+// On first use where appends the WHERE clause, after that it can be selectively used to append the operator and fields
 // First parameter specifies the operator to be used to append with the previous where rule if exists.
 // Second parameter is the fieldName that the rule will validate into.
 // Third parameter tells if the query should merge to the previous one or creating new block, if true the operator will be used for that reason.
@@ -400,36 +440,28 @@ func (q *Query) where(operator InternalBitwiseOperator, fieldName string, merge 
 		}
 	}
 
-	if q.getCurrentBuildStep() == INTERNAL_WHERE_ID {
-		if merge {
+	currentBuildStep := q.getCurrentBuildStep()
+	if currentBuildStep == INTERNAL_WHERE_ID || currentBuildStep == INTERNAL_COMPOSED_WHERE_ID {
+		if currentBuildStep == INTERNAL_COMPOSED_WHERE_ID {
+			// Where after compose() build step will create a new chain of conditions
+			q.appendQueryBlock((string)(operator))
+			q.appendQueryBlock(fieldName)
+		} else if merge {
+			// When merge is true, where will append the operator and field creation a new partial condition
 			q.replaceCurrentQueryBlock(fmt.Sprintf("%s %s %s", q.getCurrentQueryBlock(), operator, fieldName))
 		} else {
 			q.appendQueryBlock(fieldName)
 		}
 	} else {
-		/*
-			Where(nome).Equals(valor).                          [Where][Nome = Valor]
-			Or(nome).In(valor1, valor2, valor3).                [Where][Nome = Valor or Nome in (Valor1, Valor2, Valor3)]
-			Compose(
-				Where(nome).Equals(valor).
-				And(nome).Equals(valor)
-			).
-			And(
-				Compose(
-					Where(nome).Equals(valor).
-					And(nome).In(valor1, valor2, valor3)
-				)
-			)
-			And(nome).Equals(valor).
-		*/
+		// Happens only one time when where needs to be appended
 		q.appendQueryBlock("WHERE")
 		q.appendQueryBlock(fieldName)
-		q.setCurrentBuildStep(INTERNAL_WHERE_ID)
 	}
 
+	q.setCurrentBuildStep(INTERNAL_WHERE_ID)
 	q.registerForValidation(fieldName)
 	return &PartialWhereQuery{
-		q,
+		innerQuery: q,
 	}
 }
 func (q *Query) replaceCurrentQueryBlock(query string) {
@@ -472,7 +504,6 @@ func (q *QueryValidator) getCurrentBuildStep() BuildStep {
 	return q.CurrentBuildStep
 }
 func (q *QueryValidator) isValid() error {
-	var fields []string
 	for _, fieldName := range q.requestedFields {
 		var table *TableRegistry = q.TableRegistry
 
@@ -494,7 +525,6 @@ func (q *QueryValidator) isValid() error {
 		if !exists {
 			return ErrorDescription(ErrSyntax, fmt.Sprintf("%s does not exist in %s", fieldName, table.TableName))
 		}
-		fields = append(fields, string(fieldName))
 	}
 	return nil
 }

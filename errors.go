@@ -7,23 +7,23 @@ import (
 )
 
 var (
-	ErrConfiguration error = errors.New("Configuration Necessary")
+	ErrConfiguration error = errors.New("configuration necessary")
 
-	ErrInvalidMethodChain error = errors.New("Invalid method chaining")
-	ErrInvalidType        error = errors.New("Invalid type")
-	ErrSyntax             error = errors.New("Syntax error")
+	ErrInvalidMethodChain error = errors.New("invalid method chaining")
+	ErrInvalidType        error = errors.New("invalid type")
+	ErrSyntax             error = errors.New("syntax error")
 
-	ErrNotFound error = errors.New("Not found")
-	ErrFound    error = errors.New("Found")
+	ErrNotFound error = errors.New("not found")
+	ErrFound    error = errors.New("found")
 
-	ErrFailedOperation           error = errors.New("Failed operation")
-	ErrFailedTransaction         error = errors.New("Failed transaction")
-	ErrFailedTransactionStart    error = errors.New("Failed transaction start")
-	ErrFailedTransactionCommit   error = errors.New("Failed transaction commit")
-	ErrFailedTransactionRollback error = errors.New("Failed transaction rollback")
+	ErrFailedOperation           error = errors.New("failed operation")
+	ErrFailedTransaction         error = errors.New("failed transaction")
+	ErrFailedTransactionStart    error = errors.New("failed transaction start")
+	ErrFailedTransactionCommit   error = errors.New("failed transaction commit")
+	ErrFailedTransactionRollback error = errors.New("failed transaction rollback")
 
-	ErrBadConnection error = errors.New("Bad connection")
-	ErrUnexpected    error = errors.New("Unexpected")
+	ErrBadConnection error = errors.New("bad connection")
+	ErrUnexpected    error = errors.New("unexpected")
 )
 
 func ErrorDescription(err error, messages ...string) error {
@@ -35,5 +35,5 @@ func ErrorDescription(err error, messages ...string) error {
 	return fmt.Errorf("[%w]%s", err, description.String())
 }
 func ErrorJoin(e1, e2 error) error {
-	return fmt.Errorf("%w\n%w", e1, e2)
+	return fmt.Errorf("%w: %w", e1, e2)
 }

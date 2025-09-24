@@ -190,17 +190,20 @@ func main() {
 	}
 
 	var notifications []*Notifications
-	query := TABLE_USERS.Select("n.id", "n.title", "n.description").As("u")
-	query.InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id")
-	query.InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id")
-	query.Where("u.email").Like("%noe%", false)
-	query.AndComposed(
-		query.Where("u.email").Equals("noeeekr@gmail.com").
-			And("n.title").In("test notification title 2", "test notification title 1").
-			And("n.title").Like("%notification%", false)).
-		And("n.title").Like("%TEST%", false)
-	query.OrderAscending("n.id")
-	query.Scanner(scanNotifications(&notifications))
+	query := TABLE_USERS.
+		Select("n.id", "n.title", "n.description").As("u")
+	query.
+		InnerJoin(TABLE_USERS_NOTIFICATIONS, "un").On("u.id", "un.user_id").
+		InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id").
+		Where("u.email").Like("%noe%", false).
+		AndComposed(
+			query.Where("u.email").Equals("noeeekr@gmail.com").
+				And("n.title").In("test notification title 2", "test notification title 1").
+				And("n.title").Like("%notification%", false),
+		).
+		And("n.title").Like("%TEST%", false).
+		OrderAscending("n.id").
+		Scanner(scanNotifications(&notifications))
 
 	err = development.Do(query)
 	if err != nil {
