@@ -15,6 +15,10 @@ import (
 // Otherwise it throws a ErrNotFound if notified that no rows were found. This can be changed with ThrowErrorOnFound()
 type ReturnScanner func(rows *sql.Rows) (found bool, err error)
 
+type QueryBlock struct {
+	Block     string
+	BlockType BuildStep
+}
 type QueryType int
 type Query struct {
 	Type                QueryType
@@ -23,7 +27,7 @@ type Query struct {
 	placeholderIndex    int
 
 	// For build
-	Blocks []string
+	Blocks []QueryBlock
 	Error  error
 
 	// For build validation
@@ -40,7 +44,7 @@ type QueryValidator struct {
 	tableAliases    map[string]*TableRegistry
 	requestedFields []string
 
-	RegisteredBuildSteps map[BuildStep]bool
+	RegisteredBuildSteps map[BuildStep]int
 	CurrentBuildStep     BuildStep
 }
 
@@ -156,7 +160,7 @@ func (q *Query) Set(field string, value any) *Query {
 	return q
 }
 func (q *Query) Where(fieldName string) *PartialWhereQuery {
-	return q.where(INTERNAL_OPERATOR_AND, fieldName, false)
+	return q.where(INTERNAL_OPERATOR_NONE, fieldName, false)
 }
 func (p *PartialWhereQuery) Equals(fieldValue any) *AditionalWhereQuery {
 	if p.innerQuery.Error != nil {
@@ -168,7 +172,7 @@ func (p *PartialWhereQuery) Equals(fieldValue any) *AditionalWhereQuery {
 	p.innerQuery.replaceCurrentQueryBlock(
 		fmt.Sprintf(
 			"%s = %s",
-			p.innerQuery.getCurrentQueryBlock(),
+			p.innerQuery.getCurrentQueryBlock().Block,
 			p.innerQuery.usePlaceholder(fieldValue),
 		),
 	)
@@ -208,7 +212,7 @@ func (p *PartialWhereQuery) In(fieldValues ...any) *AditionalWhereQuery {
 	p.innerQuery.replaceCurrentQueryBlock(
 		fmt.Sprintf(
 			"%s IN (%s)",
-			p.innerQuery.getCurrentQueryBlock(),
+			p.innerQuery.getCurrentQueryBlock().Block,
 			strings.Join(placeholders, ", "),
 		),
 	)
@@ -227,7 +231,7 @@ func (p *PartialWhereQuery) IsNull() *AditionalWhereQuery {
 	p.innerQuery.replaceCurrentQueryBlock(
 		fmt.Sprintf(
 			"%s IS NULL",
-			p.innerQuery.getCurrentQueryBlock(),
+			p.innerQuery.getCurrentQueryBlock().Block,
 		),
 	)
 
@@ -249,7 +253,7 @@ func (p *PartialWhereQuery) Like(regex string, caseSensitive bool) *AditionalWhe
 
 	p.innerQuery.replaceCurrentQueryBlock(
 		fmt.Sprintf("%s %s",
-			p.innerQuery.getCurrentQueryBlock(),
+			p.innerQuery.getCurrentQueryBlock().Block,
 			likeBlock,
 		),
 	)
@@ -259,61 +263,52 @@ func (p *PartialWhereQuery) Like(regex string, caseSensitive bool) *AditionalWhe
 }
 
 /*
-Perfoms composed where like:
+Where Equals And Equals
+Compose( * When compose is used after a compose, it uses the arg len amount to determine how much merge (n * 2 -1)
 
-	WHERE (field = value, field2 IN (value2, value3, value4))
+	AndComposed(Where Equals And Equals)
+	OrComposed(Where Equals And Equals)
 
-First parameter is the where clause of the query that must be executed in composed
+)
+Or Equals
+
+[Where][Field = Value AND Field = Value][AND][((Field = Value AND Field = Value) OR (Field = Value AND Field = Value)) OR Field = Value]
+
+#1 COmpose after compose interaction => Merge n * 2 -1
 */
-
-/*
-1. 	SELECT(fields...)          	 						=>   Appends the fields to validation
-2. 		AS("alias")										=>   Appends an alias to all fields without one
-3. 	INNERJOIN(TABLE)			  	 					=>   Creates the join clause
-4. 		ON(field, field)           	 					=>	 Appends the condition of the join *Accepts two field names that must contain the aliases
-5. 	WHERE(field)               	 						=>   Creates a where clause
-6. 		Equals(value) / Like("text") / IN(values...) 	=>   Appends the rest of the condition
-7. 	And(field) / Or(field)								=>   Appends to the previous where clause
-8. 		Equals(value) / Like("text") / IN(values...) 	=>   Appends the rest of the condition
-9.  OrComposed()
-10. And(field)
-11. In(a, b, c, ...)
-
-1. [SELECT a, b, c, ...]
-2. [SELECT a, b, c, ...][AS alias]
-3. [SELECT a, b, c, ...][AS alias][INNER JOIN table]
-4. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field]
-5. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][field]
-6. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][field IN (a, b, c, ...)]
-	* In/Equals/Like should always append to last block
-7. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][field IN (a, b, c, ...)][And][field]
-8. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][field IN (a, b, c, ...) And field = value]
-	* And/Or coming from where should append to last block, compose should put the build step to compose       => Appends a condition in the same block that can be used in compose()
-	* And/Or coming from compose should create two new blocks, should put the build step back to where    => First block separates the AND, OR. The second creates a new condition chain in a new block that can be used in compose()
-
-* Compose
-9. [SELECT a, b, c, ...][AS alias][INNER JOIN table][ON field = field][Where][(field IN (a, b, c, ...) And field = value)]
-	-> Should be able to use and
-	-> Should be able to use or
-	-> Should be able to compose again
-
-*Checar caso composed where sem where - isso é um problema sim não duvide
-
-*/
-
-func (q *Query) OrComposed(qr *AditionalWhereQuery) *AditionalWhereQuery {
-	newChainBlock := "(" + q.getCurrentQueryBlock() + ")"
-	q.replaceCurrentQueryBlock(string(INTERNAL_OPERATOR_OR))
-	q.appendQueryBlock(newChainBlock)
-	q.setCurrentBuildStep(INTERNAL_COMPOSED_WHERE_ID)
-	return qr
+func (q *Query) Compose(qr ...any) *AditionalWhereQuery {
+	return q.compose(INTERNAL_OPERATOR_NONE, len(qr))
 }
-func (q *Query) AndComposed(qr *AditionalWhereQuery) *AditionalWhereQuery {
-	newChainBlock := "(" + q.getCurrentQueryBlock() + ")"
-	q.replaceCurrentQueryBlock(string(INTERNAL_OPERATOR_AND))
-	q.appendQueryBlock(newChainBlock)
+func (q *Query) OrComposed(qr ...any) *AditionalWhereQuery {
+	return q.compose(INTERNAL_OPERATOR_OR, len(qr))
+}
+func (q *Query) AndComposed(qr ...any) *AditionalWhereQuery {
+	return q.compose(INTERNAL_OPERATOR_AND, len(qr))
+}
+func (q *Query) compose(operator InternalBitwiseOperator, mergeAmount int) *AditionalWhereQuery {
+	if q.getLastBlockType() == INTERNAL_COMPOSED_WHERE_ID {
+		q.setCurrentBuildStep(INTERNAL_COMPOSED_WHERE_ID)
+		newBlock := ""
+		for range mergeAmount*2 - 1 {
+			newBlock += q.removeCurrentQueryBlock().Block + " "
+		}
+		q.replaceCurrentQueryBlock(fmt.Sprintf("%s (%s)", q.getCurrentQueryBlock().Block, newBlock))
+		return &AditionalWhereQuery{
+			Query: q,
+		}
+	}
 	q.setCurrentBuildStep(INTERNAL_COMPOSED_WHERE_ID)
-	return qr
+
+	lastBlock := q.getCurrentQueryBlock()
+	if operator == INTERNAL_OPERATOR_NONE {
+		q.removeCurrentQueryBlock()
+	} else {
+		q.replaceCurrentQueryBlock(string(operator))
+	}
+	q.appendQueryBlock("(" + lastBlock.Block + ")")
+	return &AditionalWhereQuery{
+		Query: q,
+	}
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
 	if q.Error != nil {
@@ -440,15 +435,18 @@ func (q *Query) where(operator InternalBitwiseOperator, fieldName string, merge 
 		}
 	}
 
-	currentBuildStep := q.getCurrentBuildStep()
+	currentBuildStep := q.getLastBlockType()
+	q.setCurrentBuildStep(INTERNAL_WHERE_ID)
 	if currentBuildStep == INTERNAL_WHERE_ID || currentBuildStep == INTERNAL_COMPOSED_WHERE_ID {
 		if currentBuildStep == INTERNAL_COMPOSED_WHERE_ID {
 			// Where after compose() build step will create a new chain of conditions
-			q.appendQueryBlock((string)(operator))
+			if operator != INTERNAL_OPERATOR_NONE {
+				q.appendQueryBlock((string)(operator))
+			}
 			q.appendQueryBlock(fieldName)
 		} else if merge {
 			// When merge is true, where will append the operator and field creation a new partial condition
-			q.replaceCurrentQueryBlock(fmt.Sprintf("%s %s %s", q.getCurrentQueryBlock(), operator, fieldName))
+			q.replaceCurrentQueryBlock(fmt.Sprintf("%s %s %s", q.getCurrentQueryBlock().Block, operator, fieldName))
 		} else {
 			q.appendQueryBlock(fieldName)
 		}
@@ -458,26 +456,36 @@ func (q *Query) where(operator InternalBitwiseOperator, fieldName string, merge 
 		q.appendQueryBlock(fieldName)
 	}
 
-	q.setCurrentBuildStep(INTERNAL_WHERE_ID)
 	q.registerForValidation(fieldName)
 	return &PartialWhereQuery{
 		innerQuery: q,
 	}
 }
+
+func (q *Query) getCurrentQueryBlockIndex() int {
+	return len(q.Blocks) - 1
+}
+func (q *Query) removeCurrentQueryBlock() QueryBlock {
+	if len(q.Blocks) == 0 {
+		return QueryBlock{
+			BlockType: -1,
+			Block:     "",
+		}
+	}
+	removedBlock := q.Blocks[len(q.Blocks)-1]
+	q.Blocks = q.Blocks[:len(q.Blocks)-1]
+	return removedBlock
+}
 func (q *Query) replaceCurrentQueryBlock(query string) {
 	if len(q.Blocks) == 0 {
-		q.Blocks = append(q.Blocks, query)
+		q.Blocks = append(q.Blocks, QueryBlock{Block: query, BlockType: q.getLastBlockType()})
 	}
-	q.Blocks[len(q.Blocks)-1] = query
+	q.Blocks[len(q.Blocks)-1] = QueryBlock{Block: query, BlockType: q.getLastBlockType()}
 }
 func (q *Query) appendQueryBlock(query string) {
-	q.Blocks = append(q.Blocks, query)
+	q.Blocks = append(q.Blocks, QueryBlock{Block: query, BlockType: q.getLastBlockType()})
 }
-func (q *Query) getCurrentQueryBlock() string {
-	if len(q.Blocks) == 0 {
-		return ""
-	}
-	// Removes the white space added by default
+func (q *Query) getCurrentQueryBlock() QueryBlock {
 	return q.Blocks[len(q.Blocks)-1]
 }
 func (q *Query) usePlaceholder(value any) string {
@@ -487,20 +495,27 @@ func (q *Query) usePlaceholder(value any) string {
 	return placeholder
 }
 func (q *Query) build() string {
-	if Settings().Environment().GetEnvironment() == DEBUGGING {
-		fmt.Printf("[%s]\n", strings.Join(q.Blocks, "]["))
+	blocks := make([]string, len(q.Blocks))
+	for i := range q.Blocks {
+		blocks[i] = q.Blocks[i].Block
 	}
-	return strings.Join(q.Blocks, " ")
+	if Settings().Environment().GetEnvironment() == DEBUGGING {
+		fmt.Printf("[%s]\n", strings.Join(blocks, "]["))
+	}
+	return strings.Join(blocks, " ")
+}
+func (q *QueryValidator) getBuildStepAmount(step BuildStep) int {
+	return q.RegisteredBuildSteps[step]
 }
 func (q *QueryValidator) containsBuildStep(step BuildStep) bool {
 	_, found := q.RegisteredBuildSteps[step]
 	return found
 }
 func (q *QueryValidator) setCurrentBuildStep(step BuildStep) {
-	q.RegisteredBuildSteps[step] = true
+	q.RegisteredBuildSteps[step] += 1
 	q.CurrentBuildStep = step
 }
-func (q *QueryValidator) getCurrentBuildStep() BuildStep {
+func (q *QueryValidator) getLastBlockType() BuildStep {
 	return q.CurrentBuildStep
 }
 func (q *QueryValidator) isValid() error {
@@ -533,7 +548,7 @@ func (q *QueryValidator) registerForValidation(fieldNames ...string) {
 }
 func newQueryValidator(t *TableRegistry) *QueryValidator {
 	return &QueryValidator{
-		RegisteredBuildSteps: make(map[BuildStep]bool),
+		RegisteredBuildSteps: make(map[BuildStep]int),
 		CurrentBuildStep:     -1,
 
 		requestedFields: make([]string, 0),

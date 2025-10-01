@@ -147,17 +147,11 @@ func (m *Commiter) dropDatabase(database *DatabaseRegistry) error {
 	return nil
 }
 func (m *Commiter) parseCreateDatabaseQuery(database *DatabaseRegistry) *Query {
-	q := Query{}
-	q.appendQueryBlock(fmt.Sprintf("CREATE DATABASE %s WITH OWNER = %s;", database.Name, database.Owner.Name))
-	return &q
+	return newUnsafeQuery(CREATE, fmt.Sprintf("CREATE DATABASE %s WITH OWNER = %s;", database.Name, database.Owner.Name))
 }
 func (m *Commiter) parseCreateUserQuery(user *User) *Query {
-	q := Query{}
-	q.appendQueryBlock(fmt.Sprintf("CREATE USER %s\n\tWITH LOGIN\n\tPASSWORD '%s';", user.Name, user.Password()))
-	return &q
+	return newUnsafeQuery(CREATE, fmt.Sprintf("CREATE USER %s\n\tWITH LOGIN\n\tPASSWORD '%s';", user.Name, user.Password()))
 }
 func (m *Commiter) parseDropUserQuery(user *User) *Query {
-	q := Query{}
-	q.appendQueryBlock(fmt.Sprintf("DROP USER %s;", user.Name))
-	return &q
+	return newUnsafeQuery(DROP, fmt.Sprintf("DROP USER %s;", user.Name))
 }

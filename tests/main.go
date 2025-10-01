@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Noeeekr/borm"
@@ -28,6 +29,9 @@ type Users struct {
 	Password string    `borm:"(CONSTRAINTS, NOT NULL)"`
 	Role     *UserRole `borm:"(TYPE, user_role)"`
 
+	SpecificWordA string `borm:"(NAME, specific_a)"`
+	SpecificWordB string `borm:"(NAME, specific_b)"`
+	SpecificWordC string `borm:"(NAME, specific_c)"`
 	// borm:"TYPE<serial> NAME<issuer_id> CONSTRAINTS<ignore, not null, unique, default 'abcd'> "
 	// borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"
 	// borm:"type is serial, constraints are primary key and not null and default 'abcd', name is issuer_id"
@@ -77,6 +81,10 @@ func main() {
 		os.Exit(1)
 	}
 	development, err := commiter.MigrateDatabase(DEVELOPMENT_DATABASE)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
 	defer development.DB().Close()
 
 	// Create new database relations
@@ -175,6 +183,18 @@ func main() {
 		fmt.Println(err.Error())
 		return
 	}
+	composeTestUserName := "peter parker"
+	composeTestUserEmail := "peter email"
+	composeTestUserRole := STUDENT
+	composeTestExpectedPassword := "Password Found"
+	err = transaction.Do(TABLE_USERS.
+		Insert("name", "email", "role", "specific_a", "specific_b", "specific_c", "password").
+		Values(composeTestUserName, composeTestUserEmail, composeTestUserRole, "a", "b", "c", composeTestExpectedPassword),
+	)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
 	err = transaction.Do(TABLE_USERS_NOTIFICATIONS.
 		Insert("user_id", "notification_id").
 		Values(firstUser, notificationId),
@@ -222,6 +242,26 @@ func main() {
 		return
 	}
 
+	composedTestPassword := ""
+
+	query = TABLE_USERS.
+		Select("password").
+		Scanner(scanString(&composedTestPassword))
+	query.Compose(query.Where("name").Equals(composeTestUserName))
+	query.Compose(
+		query.AndComposed(query.Where("email").Equals(composeTestUserEmail).And("email").Equals(composeTestUserEmail)),
+		query.AndComposed(query.Where("name").Equals(composeTestUserName).And("name").Equals(composeTestUserName)),
+	)
+	blocks := make([]string, len(query.Blocks))
+	for i, block := range query.Blocks {
+		blocks[i] = block.Block
+	}
+	fmt.Println("[" + strings.Join(blocks, "]\n[") + "]")
+	err = development.Do(query)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
 	var whereInExpectedReturn = []any{"peter", "andre", "jorge"}
 	var whereInFoundAmount int
 	err = development.Do(TABLE_USERS.
@@ -245,6 +285,15 @@ func main() {
 		fmt.Println(err.Error())
 	}
 
+	fmt.Println("")
+	if composeTestExpectedPassword != composedTestPassword {
+		fmt.Println("Failed to find correct password")
+		fmt.Println("Expected: ", composeTestExpectedPassword)
+		fmt.Println("Got: ", composedTestPassword)
+		return
+	} else {
+		fmt.Println("[Composed test password found]: ", composedTestPassword)
+	}
 	fmt.Println("[Query Using Where (A) IN (A, B, C, ...)]")
 	fmt.Println("\t[Expected Amount]:", len(whereInExpectedReturn))
 	fmt.Println("\t[Found Amount]:", whereInFoundAmount)
