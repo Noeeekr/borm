@@ -37,6 +37,13 @@ type Query struct {
 	throwErrorOnFound bool
 }
 
+type RequiredQuery struct {
+	innerQuery *Query
+}
+type OptionalQuery struct {
+	*Query
+}
+
 type QueryValidator struct {
 	// Pointer to the table this query is being built on
 	TableRegistry *TableRegistry
@@ -48,15 +55,14 @@ type QueryValidator struct {
 	CurrentBuildStep     BuildStep
 }
 
-type PartialInnerJoinQuery struct {
-	innerQuery *Query
+type ConditionalQuery struct {
+	parentQuery *Query
+	block       string
+	error       error
 }
-type PartialWhereQuery struct {
-	innerQuery *Query
-}
-type AditionalWhereQuery struct {
-	*Query
-}
+type PartialInnerJoinQuery RequiredQuery
+type PartialWhereQuery RequiredQuery
+type AditionalWhereQuery OptionalQuery
 
 // Used internally to identify if a query already has one of these
 type BuildStep int
@@ -79,6 +85,13 @@ const (
 
 const FIELD_PARSER_PLACEHOLDER = "$$$"
 
+func newConditionalQuery(parent *Query, block string, error error) *ConditionalQuery {
+	return &ConditionalQuery{
+		parentQuery: parent,
+		block:       block,
+		error:       error,
+	}
+}
 func (q *Query) Scan(rows *sql.Rows) (found bool, err error) {
 	return q.RowsScanner(rows)
 }
@@ -159,156 +172,67 @@ func (q *Query) Set(field string, value any) *Query {
 	q.appendQueryBlock(fmt.Sprintf("%s = %s", field, q.usePlaceholder(value)))
 	return q
 }
-func (q *Query) Where(fieldName string) *PartialWhereQuery {
-	return q.where(INTERNAL_OPERATOR_NONE, fieldName, false)
+func (q *Query) Where(conditional *ConditionalQuery) *Query {
+	return q.where(INTERNAL_OPERATOR_NONE, conditional).parentQuery
 }
-func (p *PartialWhereQuery) Equals(fieldValue any) *AditionalWhereQuery {
-	if p.innerQuery.Error != nil {
-		return &AditionalWhereQuery{
-			Query: p.innerQuery,
-		}
+func (p *ConditionalQuery) Equals(fieldValue any) *ConditionalQuery {
+	if p.error != nil {
+		return p
 	}
 
-	p.innerQuery.replaceCurrentQueryBlock(
-		fmt.Sprintf(
-			"%s = %s",
-			p.innerQuery.getCurrentQueryBlock().Block,
-			p.innerQuery.usePlaceholder(fieldValue),
-		),
-	)
-	return &AditionalWhereQuery{
-		Query: p.innerQuery,
-	}
+	p.block += "= " + p.parentQuery.usePlaceholder(fieldValue)
+	return p
 }
-func (q *AditionalWhereQuery) And(fieldName string) *PartialWhereQuery {
-	return q.where(INTERNAL_OPERATOR_AND, fieldName, true)
+func (q *Query) And(conditionals ...*ConditionalQuery) *ConditionalQuery {
+	return q.where(INTERNAL_OPERATOR_AND, conditionals...)
 }
-func (q *AditionalWhereQuery) Or(fieldName string) *PartialWhereQuery {
-	return q.where(INTERNAL_OPERATOR_OR, fieldName, true)
+func (q *Query) Or(conditionals ...*ConditionalQuery) *ConditionalQuery {
+	return q.where(INTERNAL_OPERATOR_OR, conditionals...)
 }
-func (p *PartialWhereQuery) In(fieldValues ...any) *AditionalWhereQuery {
-	if p.innerQuery.Error != nil {
-		return &AditionalWhereQuery{
-			Query: p.innerQuery,
-		}
+func (p *ConditionalQuery) In(fieldValues ...any) *ConditionalQuery {
+	if p.error != nil {
+		return p
 	}
 
 	// IN (nil, value) -> calls Or
 	// Equals(nil)  -> uses IS NULL instead of = value
 	fieldAmount := len(fieldValues)
 	if fieldAmount == 0 {
-		p.innerQuery.Error = ErrorDescription(ErrSyntax, "Where clause shouldn't be empty and can cause unwanted returns. Consider removing it if it is intended.")
-		return &AditionalWhereQuery{
-			Query: p.innerQuery,
-		}
+		p.error = ErrorDescription(ErrSyntax, "Where clause shouldn't be empty and can cause unwanted returns. Consider removing it if it is intended.")
+		return p
 	}
 
 	// formats to: A in ($1, $2, $3, ...)
 	placeholders := make([]string, fieldAmount)
 	for i := range fieldValues {
-		placeholders[i] = p.innerQuery.usePlaceholder(fieldValues[i])
+		placeholders[i] = p.parentQuery.usePlaceholder(fieldValues[i])
 	}
 
-	p.innerQuery.replaceCurrentQueryBlock(
-		fmt.Sprintf(
-			"%s IN (%s)",
-			p.innerQuery.getCurrentQueryBlock().Block,
-			strings.Join(placeholders, ", "),
-		),
-	)
-
-	return &AditionalWhereQuery{
-		Query: p.innerQuery,
-	}
+	p.block += fmt.Sprintf("IN (%s)", strings.Join(placeholders, ", "))
+	return p
 }
-func (p *PartialWhereQuery) IsNull() *AditionalWhereQuery {
-	if p.innerQuery.Error != nil {
-		return &AditionalWhereQuery{
-			Query: p.innerQuery,
-		}
+func (p *ConditionalQuery) IsNull() *ConditionalQuery {
+	if p.error != nil {
+		return p
 	}
 
-	p.innerQuery.replaceCurrentQueryBlock(
-		fmt.Sprintf(
-			"%s IS NULL",
-			p.innerQuery.getCurrentQueryBlock().Block,
-		),
-	)
-
-	return &AditionalWhereQuery{
-		Query: p.innerQuery,
-	}
+	p.block += "IS NULL"
+	return p
 }
-func (p *PartialWhereQuery) Like(regex string, caseSensitive bool) *AditionalWhereQuery {
-	if p.innerQuery.Error != nil {
-		return &AditionalWhereQuery{
-			Query: p.innerQuery,
-		}
+func (p *ConditionalQuery) Like(regex string, caseSensitive bool) *ConditionalQuery {
+	if p.error != nil {
+		return p
 	}
-
 	likeBlock := "LIKE '" + regex + "'"
 	if !caseSensitive {
 		likeBlock = "I" + likeBlock
 	}
-
-	p.innerQuery.replaceCurrentQueryBlock(
-		fmt.Sprintf("%s %s",
-			p.innerQuery.getCurrentQueryBlock().Block,
-			likeBlock,
-		),
-	)
-	return &AditionalWhereQuery{
-		Query: p.innerQuery,
-	}
+	p.block += likeBlock
+	return p
 }
 
-/*
-Where Equals And Equals
-Compose( * When compose is used after a compose, it uses the arg len amount to determine how much merge (n * 2 -1)
-
-	AndComposed(Where Equals And Equals)
-	OrComposed(Where Equals And Equals)
-
-)
-Or Equals
-
-[Where][Field = Value AND Field = Value][AND][((Field = Value AND Field = Value) OR (Field = Value AND Field = Value)) OR Field = Value]
-
-#1 COmpose after compose interaction => Merge n * 2 -1
-*/
-func (q *Query) Compose(qr ...any) *AditionalWhereQuery {
-	return q.compose(INTERNAL_OPERATOR_NONE, len(qr))
-}
-func (q *Query) OrComposed(qr ...any) *AditionalWhereQuery {
-	return q.compose(INTERNAL_OPERATOR_OR, len(qr))
-}
-func (q *Query) AndComposed(qr ...any) *AditionalWhereQuery {
-	return q.compose(INTERNAL_OPERATOR_AND, len(qr))
-}
-func (q *Query) compose(operator InternalBitwiseOperator, mergeAmount int) *AditionalWhereQuery {
-	if q.getLastBlockType() == INTERNAL_COMPOSED_WHERE_ID {
-		q.setCurrentBuildStep(INTERNAL_COMPOSED_WHERE_ID)
-		newBlock := ""
-		for range mergeAmount*2 - 1 {
-			newBlock += q.removeCurrentQueryBlock().Block + " "
-		}
-		q.replaceCurrentQueryBlock(fmt.Sprintf("%s (%s)", q.getCurrentQueryBlock().Block, newBlock))
-		return &AditionalWhereQuery{
-			Query: q,
-		}
-	}
-	q.setCurrentBuildStep(INTERNAL_COMPOSED_WHERE_ID)
-
-	lastBlock := q.getCurrentQueryBlock()
-	if operator == INTERNAL_OPERATOR_NONE {
-		q.removeCurrentQueryBlock()
-	} else {
-		q.replaceCurrentQueryBlock(string(operator))
-	}
-	q.appendQueryBlock("(" + lastBlock.Block + ")")
-	return &AditionalWhereQuery{
-		Query: q,
-	}
+func (q *Query) Compose(conditional *ConditionalQuery) *ConditionalQuery {
+	return newConditionalQuery(q, fmt.Sprintf("(%s)", conditional.block), nil)
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
 	if q.Error != nil {
@@ -393,6 +317,19 @@ func (q *Query) Returning(fields ...string) *Query {
 	return q
 }
 
+func (q *Query) Field(fieldName string) *ConditionalQuery {
+	if q.Error != nil {
+		return newConditionalQuery(q, fieldName, q.Error)
+	}
+	if q.Type == INSERT {
+		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE")
+		return newConditionalQuery(q, fieldName, q.Error)
+	}
+
+	q.registerForValidation(fieldName)
+	q.setCurrentBuildStep(INTERNAL_WHERE_ID)
+	return newConditionalQuery(q, fieldName+" ", q.Error)
+}
 func (q *Query) Offset(amount int) *Query {
 	if q.Error != nil {
 		return q
@@ -422,46 +359,37 @@ func (q *Query) Limit(amount int) *Query {
 // First parameter specifies the operator to be used to append with the previous where rule if exists.
 // Second parameter is the fieldName that the rule will validate into.
 // Third parameter tells if the query should merge to the previous one or creating new block, if true the operator will be used for that reason.
-func (q *Query) where(operator InternalBitwiseOperator, fieldName string, merge bool) *PartialWhereQuery {
+func (q *Query) where(operator InternalBitwiseOperator, conditionals ...*ConditionalQuery) *ConditionalQuery {
 	if q.Error != nil {
-		return &PartialWhereQuery{
-			innerQuery: q,
-		}
+		return newConditionalQuery(q, "", q.Error)
 	}
 	if q.Type == INSERT {
-		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE")
-		return &PartialWhereQuery{
-			innerQuery: q,
-		}
+		return newConditionalQuery(q, "", ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE"))
+	}
+	if len(conditionals) == 0 {
+		return newConditionalQuery(q, "", ErrorDescription(ErrSyntax, "Conditionals shouldn't be used with empty values"))
 	}
 
-	currentBuildStep := q.getLastBlockType()
-	q.setCurrentBuildStep(INTERNAL_WHERE_ID)
-	if currentBuildStep == INTERNAL_WHERE_ID || currentBuildStep == INTERNAL_COMPOSED_WHERE_ID {
-		if currentBuildStep == INTERNAL_COMPOSED_WHERE_ID {
-			// Where after compose() build step will create a new chain of conditions
-			if operator != INTERNAL_OPERATOR_NONE {
-				q.appendQueryBlock((string)(operator))
-			}
-			q.appendQueryBlock(fieldName)
-		} else if merge {
-			// When merge is true, where will append the operator and field creation a new partial condition
-			q.replaceCurrentQueryBlock(fmt.Sprintf("%s %s %s", q.getCurrentQueryBlock().Block, operator, fieldName))
-		} else {
-			q.appendQueryBlock(fieldName)
+	switch operator {
+	case INTERNAL_OPERATOR_NONE:
+		q.appendQueryBlock("WHERE " + conditionals[0].block)
+		return newConditionalQuery(q, "", nil)
+	case INTERNAL_OPERATOR_OR:
+		blocks := make([]string, len(conditionals))
+		for i, conditional := range conditionals {
+			blocks[i] = conditional.block
 		}
-	} else {
-		// Happens only one time when where needs to be appended
-		q.appendQueryBlock("WHERE")
-		q.appendQueryBlock(fieldName)
-	}
-
-	q.registerForValidation(fieldName)
-	return &PartialWhereQuery{
-		innerQuery: q,
+		return newConditionalQuery(q, strings.Join(blocks, " OR "), nil)
+	case INTERNAL_OPERATOR_AND:
+		blocks := make([]string, len(conditionals))
+		for i, conditional := range conditionals {
+			blocks[i] = conditional.block
+		}
+		return newConditionalQuery(q, strings.Join(blocks, " AND "), nil)
+	default:
+		return newConditionalQuery(q, "", ErrorDescription(ErrUnexpected, "How????"))
 	}
 }
-
 func (q *Query) getCurrentQueryBlockIndex() int {
 	return len(q.Blocks) - 1
 }
@@ -486,6 +414,12 @@ func (q *Query) appendQueryBlock(query string) {
 	q.Blocks = append(q.Blocks, QueryBlock{Block: query, BlockType: q.getLastBlockType()})
 }
 func (q *Query) getCurrentQueryBlock() QueryBlock {
+	if len(q.Blocks) == 0 {
+		return QueryBlock{
+			BlockType: -1,
+			Block:     "",
+		}
+	}
 	return q.Blocks[len(q.Blocks)-1]
 }
 func (q *Query) usePlaceholder(value any) string {
@@ -500,7 +434,7 @@ func (q *Query) build() string {
 		blocks[i] = q.Blocks[i].Block
 	}
 	if Settings().Environment().GetEnvironment() == DEBUGGING {
-		fmt.Printf("[%s]\n", strings.Join(blocks, "]["))
+		fmt.Printf("[%s]\n", strings.Join(blocks, "]\n["))
 	}
 	return strings.Join(blocks, " ")
 }
