@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Noeeekr/borm"
@@ -227,14 +226,14 @@ func main() {
 		InnerJoin(TABLE_NOTIFICATIONS, "n").On("n.id", "un.notification_id").
 		Where(
 			query.And(
-				query.Field("u.email").Like("%noe%", false),
+				query.Field("u.email").IsLike("%noe%", false),
 				query.Compose(
 					query.And(
-						query.Field("u.email").Equals("noeeekr@gmail.com"),
-						query.Field("n.title").In("test notification title 2", "test notification title 1"),
-						query.Field("n.title").Like("%notification%", false)),
+						query.Field("u.email").IsEqual("noeeekr@gmail.com"),
+						query.Field("n.title").IsIn("test notification title 2", "test notification title 1"),
+						query.Field("n.title").IsLike("%notification%", false)),
 				),
-				query.Field("n.title").Like("%TEST%", false),
+				query.Field("n.title").IsLike("%TEST%", false),
 			),
 		).
 		OrderAscending("n.id")
@@ -248,7 +247,7 @@ func main() {
 	query = TABLE_USERS.
 		Select("id", "email", "name")
 	query.
-		Where(query.Field("email").Equals("noeeekr@gmail.com")).
+		Where(query.Field("email").IsEqual("noeeekr@gmail.com")).
 		OrderAscending("id").
 		Scanner(RowAmount(&userAmountFound))
 
@@ -266,20 +265,20 @@ func main() {
 	query.Where(
 		query.And(
 			query.Compose(
-				query.Field("name").Equals(composeTestUserName),
+				query.Field("name").IsEqual(composeTestUserName),
 			),
 			query.Compose(
 				query.And(
 					query.Compose(
 						query.And(
-							query.Field("email").Equals(composeTestUserEmail),
-							query.Field("email").Equals(composeTestUserEmail),
+							query.Field("email").IsEqual(composeTestUserEmail),
+							query.Field("email").IsEqual(composeTestUserEmail),
 						),
 					),
 					query.Compose(
 						query.And(
-							query.Field("name").Equals(composeTestUserName),
-							query.Field("name").Equals(composeTestUserName),
+							query.Field("name").IsEqual(composeTestUserName),
+							query.Field("name").IsEqual(composeTestUserName),
 						),
 					),
 				),
@@ -296,7 +295,7 @@ func main() {
 	query = TABLE_USERS.
 		Select("id", "email", "name")
 	query.
-		Where(query.Field("name").In(whereInExpectedReturn...)).
+		Where(query.Field("name").IsIn(whereInExpectedReturn...)).
 		OrderAscending("id").
 		Scanner(RowAmount(&whereInFoundAmount))
 
@@ -310,7 +309,7 @@ func main() {
 	query = TABLE_USERS.
 		Select("name").
 		Scanner(scanString(&nullUserName))
-	query.Where(query.Field("role").IsNull())
+	query.Where(query.Field("role").IsEqual(nil))
 
 	err = development.Do(query)
 	if err != nil || nullUserName == "" {
@@ -339,15 +338,15 @@ func main() {
 	for i, filter := range filters {
 		innerConditionals := []*borm.ConditionalQuery{}
 		if filter.A == "" {
-			innerConditionals = append(innerConditionals, query.Field("c.name").Like("%", false))
+			innerConditionals = append(innerConditionals, query.Field("c.name").IsLike("%", false))
 		} else {
-			innerConditionals = append(innerConditionals, query.Field("c.name").Like("%"+filter.A+"%", false))
+			innerConditionals = append(innerConditionals, query.Field("c.name").IsLike("%"+filter.A+"%", false))
 		}
 		if filter.B != "" {
 			innerConditionals = append(innerConditionals, query.Compose(
 				query.And(
-					query.Field("u.name").Equals(filter.B),
-					query.Field("u.role").Equals(STUDENT),
+					query.Field("u.name").IsEqual(filter.B),
+					query.Field("u.role").IsEqual(STUDENT),
 				),
 			))
 		}
@@ -356,17 +355,17 @@ func main() {
 				innerConditionals,
 				query.Compose(
 					query.And(
-						query.Field("u.name").Equals(filter.C),
-						query.Field("u.role").Equals(STUDENT),
+						query.Field("u.name").IsEqual(filter.C),
+						query.Field("u.role").IsEqual(STUDENT),
 					),
 				),
 			)
 		}
 		if filter.D != "" {
-			innerConditionals = append(innerConditionals, query.Field("c.name").Equals(filter.D))
+			innerConditionals = append(innerConditionals, query.Field("c.name").IsEqual(filter.D))
 		}
 		if filter.E != "" {
-			innerConditionals = append(innerConditionals, query.Field("c.role").Equals(filter.E))
+			innerConditionals = append(innerConditionals, query.Field("c.role").IsEqual(filter.E))
 		}
 		if filter.F != nil {
 			// query.And("c.created_at").After(filter.CreationYear) => Which is time.Time()
@@ -376,7 +375,7 @@ func main() {
 
 	query.Where(
 		query.And(
-			query.Field("c.name").Equals("andre"),
+			query.Field("c.name").IsEqual("andre"),
 			query.Compose(
 				query.Or(conditions...),
 			),
@@ -479,65 +478,12 @@ func RowAmount(i *int) borm.ReturnScanner {
 	}
 }
 
-func printBlockCondition(query *borm.Query) {
-	blocks := []string{}
-	for _, blockinfo := range query.Blocks {
-		blocks = append(blocks, blockinfo.Block)
-	}
-	fmt.Println("-------")
-	fmt.Println("[" + strings.Join(blocks, "]\n[") + "]")
-	fmt.Println("-------")
-}
-
-/*
-
-	conditions := make([]*borm.ConditionalQuery, len(filters))
-	for _, filter := range filters {
-		innerConditionals := []*borm.ConditionalQuery{}
-		if filter.A == "" {
-			innerConditionals = append(innerConditionals, query.Field("c.name").Like("%", false))
-		} else {
-			innerConditionals = append(innerConditionals, query.Field("c.name").Like("%"+filter.A+"%", false))
-		}
-		if filter.B != "" {
-			innerConditionals = append(innerConditionals, query.Compose(
-				query.And(
-					query.Field("u.name").Equals(filter.B),
-					query.Field("u.role").Equals(STUDENT),
-				),
-			))
-		}
-		if filter.C != "" {
-			innerConditionals = append(
-				innerConditionals,
-				query.Compose(
-					query.And(
-						query.Field("u.name").Equals(filter.C),
-						query.Field("u.role").Equals(STUDENT),
-					),
-				),
-			)
-		}
-		if filter.D != "" {
-			innerConditionals = append(innerConditionals, query.Field("c.name").Equals(filter.D))
-		}
-		if filter.E != "" {
-			innerConditionals = append(innerConditionals, query.Field("c.role").Equals(filter.E))
-		}
-			query.And(
-				query.Field().Equals()
-				query.Field().Equals()
-			)
-		conditions = append(conditions, query.Compose(query.And(innerConditionals...)))
-	}
-
-	query.Where(
-		query.And(
-			query.Field("c.name").Equals("andre"),
-			query.Compose(
-				query.Or(conditions...),
-			),
-		),
-	)
-
-*/
+// func printBlockCondition(query *borm.Query) {
+// 	blocks := []string{}
+// 	for _, blockinfo := range query.Blocks {
+// 		blocks = append(blocks, blockinfo.Block)
+// 	}
+// 	fmt.Println("-------")
+// 	fmt.Println("[" + strings.Join(blocks, "]\n[") + "]")
+// 	fmt.Println("-------")
+// }

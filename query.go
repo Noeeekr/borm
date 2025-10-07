@@ -175,27 +175,17 @@ func (q *Query) Set(field string, value any) *Query {
 func (q *Query) Where(conditional *ConditionalQuery) *Query {
 	return q.where(INTERNAL_OPERATOR_NONE, conditional).parentQuery
 }
-func (p *ConditionalQuery) Equals(fieldValue any) *ConditionalQuery {
-	if p.error != nil {
-		return p
-	}
-
-	p.block += "= " + p.parentQuery.usePlaceholder(fieldValue)
-	return p
-}
 func (q *Query) And(conditionals ...*ConditionalQuery) *ConditionalQuery {
 	return q.where(INTERNAL_OPERATOR_AND, conditionals...)
 }
 func (q *Query) Or(conditionals ...*ConditionalQuery) *ConditionalQuery {
 	return q.where(INTERNAL_OPERATOR_OR, conditionals...)
 }
-func (p *ConditionalQuery) In(fieldValues ...any) *ConditionalQuery {
+func (p *ConditionalQuery) IsIn(fieldValues ...any) *ConditionalQuery {
 	if p.error != nil {
 		return p
 	}
 
-	// IN (nil, value) -> calls Or
-	// Equals(nil)  -> uses IS NULL instead of = value
 	fieldAmount := len(fieldValues)
 	if fieldAmount == 0 {
 		p.error = ErrorDescription(ErrSyntax, "Where clause shouldn't be empty and can cause unwanted returns. Consider removing it if it is intended.")
@@ -208,18 +198,56 @@ func (p *ConditionalQuery) In(fieldValues ...any) *ConditionalQuery {
 		placeholders[i] = p.parentQuery.usePlaceholder(fieldValues[i])
 	}
 
-	p.block += fmt.Sprintf("IN (%s)", strings.Join(placeholders, ", "))
+	p.block += fmt.Sprintf("IN (%s) ", strings.Join(placeholders, ", "))
 	return p
 }
-func (p *ConditionalQuery) IsNull() *ConditionalQuery {
+func (p *ConditionalQuery) IsLessThan(fieldValue any) *ConditionalQuery {
 	if p.error != nil {
 		return p
 	}
 
-	p.block += "IS NULL"
+	p.block += "> " + p.parentQuery.usePlaceholder(fieldValue)
 	return p
 }
-func (p *ConditionalQuery) Like(regex string, caseSensitive bool) *ConditionalQuery {
+func (p *ConditionalQuery) IsBiggerThan(fieldValue any) *ConditionalQuery {
+	if p.error != nil {
+		return p
+	}
+
+	p.block += "< " + p.parentQuery.usePlaceholder(fieldValue)
+	return p
+}
+func (p *ConditionalQuery) IsAfter(fieldValue any) *ConditionalQuery {
+	return p.IsBiggerThan(fieldValue)
+}
+func (p *ConditionalQuery) IsBefore(fieldValue any) *ConditionalQuery {
+	return p.IsLessThan(fieldValue)
+}
+func (p *ConditionalQuery) IsEqual(fieldValue any) *ConditionalQuery {
+	if p.error != nil {
+		return p
+	}
+
+	if fieldValue == nil {
+		p.block += "IS NULL "
+		return p
+	}
+	p.block += "= " + p.parentQuery.usePlaceholder(fieldValue)
+	return p
+}
+func (p *ConditionalQuery) IsInRange(fieldValueA, fieldValueB any) *ConditionalQuery {
+	if p.error != nil {
+		return p
+	}
+
+	p.block += fmt.Sprintf(
+		"BETWEEN %s AND %s ",
+		p.parentQuery.usePlaceholder(fieldValueA),
+		p.parentQuery.usePlaceholder(fieldValueB),
+	)
+	return p
+}
+func (p *ConditionalQuery) IsLike(regex string, caseSensitive bool) *ConditionalQuery {
 	if p.error != nil {
 		return p
 	}
@@ -227,7 +255,7 @@ func (p *ConditionalQuery) Like(regex string, caseSensitive bool) *ConditionalQu
 	if !caseSensitive {
 		likeBlock = "I" + likeBlock
 	}
-	p.block += likeBlock
+	p.block += likeBlock + " "
 	return p
 }
 
@@ -283,7 +311,22 @@ func (q *Query) As(alias string) *Query {
 	q.appendQueryBlock(fmt.Sprintf("AS %s", alias))
 	return q
 }
+func (q *Query) RightJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery {
+	return q.join(r, "RIGHT JOIN", alias)
+}
+func (q *Query) CrossJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery {
+	return q.join(r, "CROSS JOIN", alias)
+}
+func (q *Query) Join(r *TableRegistry, alias string) *PartialInnerJoinQuery {
+	return q.join(r, "JOIN", alias)
+}
+func (q *Query) LeftJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery {
+	return q.join(r, "LEFT JOIN", alias)
+}
 func (q *Query) InnerJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery {
+	return q.join(r, "INNER JOIN", alias)
+}
+func (q *Query) join(r *TableRegistry, joinType, alias string) *PartialInnerJoinQuery {
 	if q.Error != nil {
 		return &PartialInnerJoinQuery{
 			innerQuery: q,
@@ -291,7 +334,7 @@ func (q *Query) InnerJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery
 	}
 	q.setCurrentBuildStep(INTERNAL_JOIN_ID)
 	q.tableAliases[alias] = r
-	q.appendQueryBlock(fmt.Sprintf("INNER JOIN %s AS %s", r.TableName, alias))
+	q.appendQueryBlock(fmt.Sprintf("%s %s AS %s", joinType, r.TableName, alias))
 	return &PartialInnerJoinQuery{
 		innerQuery: q,
 	}
@@ -390,38 +433,42 @@ func (q *Query) where(operator InternalBitwiseOperator, conditionals ...*Conditi
 		return newConditionalQuery(q, "", ErrorDescription(ErrUnexpected, "How????"))
 	}
 }
-func (q *Query) getCurrentQueryBlockIndex() int {
-	return len(q.Blocks) - 1
-}
-func (q *Query) removeCurrentQueryBlock() QueryBlock {
-	if len(q.Blocks) == 0 {
-		return QueryBlock{
-			BlockType: -1,
-			Block:     "",
-		}
-	}
-	removedBlock := q.Blocks[len(q.Blocks)-1]
-	q.Blocks = q.Blocks[:len(q.Blocks)-1]
-	return removedBlock
-}
-func (q *Query) replaceCurrentQueryBlock(query string) {
-	if len(q.Blocks) == 0 {
-		q.Blocks = append(q.Blocks, QueryBlock{Block: query, BlockType: q.getLastBlockType()})
-	}
-	q.Blocks[len(q.Blocks)-1] = QueryBlock{Block: query, BlockType: q.getLastBlockType()}
-}
+
+//	func (q *Query) getCurrentQueryBlockIndex() int {
+//		return len(q.Blocks) - 1
+//	}
+//
+//	func (q *Query) removeCurrentQueryBlock() QueryBlock {
+//		if len(q.Blocks) == 0 {
+//			return QueryBlock{
+//				BlockType: -1,
+//				Block:     "",
+//			}
+//		}
+//		removedBlock := q.Blocks[len(q.Blocks)-1]
+//		q.Blocks = q.Blocks[:len(q.Blocks)-1]
+//		return removedBlock
+//	}
+//
+//	func (q *Query) replaceCurrentQueryBlock(query string) {
+//		if len(q.Blocks) == 0 {
+//			q.Blocks = append(q.Blocks, QueryBlock{Block: query, BlockType: q.getLastBlockType()})
+//		}
+//		q.Blocks[len(q.Blocks)-1] = QueryBlock{Block: query, BlockType: q.getLastBlockType()}
+//	}
 func (q *Query) appendQueryBlock(query string) {
 	q.Blocks = append(q.Blocks, QueryBlock{Block: query, BlockType: q.getLastBlockType()})
 }
-func (q *Query) getCurrentQueryBlock() QueryBlock {
-	if len(q.Blocks) == 0 {
-		return QueryBlock{
-			BlockType: -1,
-			Block:     "",
-		}
-	}
-	return q.Blocks[len(q.Blocks)-1]
-}
+
+//	func (q *Query) getCurrentQueryBlock() QueryBlock {
+//		if len(q.Blocks) == 0 {
+//			return QueryBlock{
+//				BlockType: -1,
+//				Block:     "",
+//			}
+//		}
+//		return q.Blocks[len(q.Blocks)-1]
+//	}
 func (q *Query) usePlaceholder(value any) string {
 	placeholder := fmt.Sprintf("$%d", q.placeholderIndex)
 	q.placeholderIndex++
@@ -438,9 +485,10 @@ func (q *Query) build() string {
 	}
 	return strings.Join(blocks, " ")
 }
-func (q *QueryValidator) getBuildStepAmount(step BuildStep) int {
-	return q.RegisteredBuildSteps[step]
-}
+
+//	func (q *QueryValidator) getBuildStepAmount(step BuildStep) int {
+//		return q.RegisteredBuildSteps[step]
+//	}
 func (q *QueryValidator) containsBuildStep(step BuildStep) bool {
 	_, found := q.RegisteredBuildSteps[step]
 	return found
