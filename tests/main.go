@@ -230,7 +230,7 @@ func main() {
 				query.Compose(
 					query.And(
 						query.Field("u.email").IsEqual("noeeekr@gmail.com"),
-						query.Field("n.title").IsIn("test notification title 2", "test notification title 1"),
+						query.Field("n.title").IsAny("test notification title 2", "test notification title 1"),
 						query.Field("n.title").IsLike("%notification%", false)),
 				),
 				query.Field("n.title").IsLike("%TEST%", false),
@@ -245,12 +245,11 @@ func main() {
 	}
 	var userAmountFound int
 	query = TABLE_USERS.
-		Select("id", "email", "name")
+		Select("id", "email", "name").
+		Scanner(RowAmount(&userAmountFound))
 	query.
 		Where(query.Field("email").IsEqual("noeeekr@gmail.com")).
-		OrderAscending("id").
-		Scanner(RowAmount(&userAmountFound))
-
+		OrderAscending("id")
 	err = development.Do(query)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -293,11 +292,11 @@ func main() {
 	var whereInExpectedReturn = []any{"peter", "andre", "jorge"}
 	var whereInFoundAmount int
 	query = TABLE_USERS.
-		Select("id", "email", "name")
-	query.
-		Where(query.Field("name").IsIn(whereInExpectedReturn...)).
-		OrderAscending("id").
+		Select("id", "email", "name").
 		Scanner(RowAmount(&whereInFoundAmount))
+	query.
+		Where(query.Field("name").IsAny(whereInExpectedReturn...)).
+		OrderAscending("id")
 
 	err = development.Do(query)
 	if err != nil {

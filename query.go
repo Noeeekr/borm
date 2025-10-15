@@ -17,9 +17,8 @@ type ReturnScanner func(rows *sql.Rows) (found bool, err error)
 
 type QueryBlock struct {
 	Block     string
-	BlockType BuildStep
+	BlockType QueryStep
 }
-type QueryType int
 type Query struct {
 	Type                QueryType
 	requiredValueLength int
@@ -37,8 +36,8 @@ type Query struct {
 	throwErrorOnFound bool
 }
 
-type RequiredQuery struct {
-	innerQuery *Query
+type NonOptionalQuery struct {
+	parentQuery *Query
 }
 type OptionalQuery struct {
 	*Query
@@ -51,8 +50,8 @@ type QueryValidator struct {
 	tableAliases    map[string]*TableRegistry
 	requestedFields []string
 
-	RegisteredBuildSteps map[BuildStep]int
-	CurrentBuildStep     BuildStep
+	QuerySteps map[QueryStep]int
+	QueryStep  QueryStep
 }
 
 type ConditionalQuery struct {
@@ -60,30 +59,41 @@ type ConditionalQuery struct {
 	block       string
 	error       error
 }
-type PartialInnerJoinQuery RequiredQuery
-type PartialWhereQuery RequiredQuery
-type AditionalWhereQuery OptionalQuery
+
+type QueryStep int
+type QueryType int
+type InternalBitwiseOperator string
+type PartialInnerJoinQuery NonOptionalQuery
+type PartialWhereQuery NonOptionalQuery
+type AdditionalSelectQuery OptionalQuery
+type AdditionalWhereQuery OptionalQuery
 
 // Used internally to identify if a query already has one of these
-type BuildStep int
-
-type InternalBitwiseOperator string
-
 const (
-	INTERNAL_OPERATOR_NONE InternalBitwiseOperator = ""
-	INTERNAL_OPERATOR_OR   InternalBitwiseOperator = "OR"
-	INTERNAL_OPERATOR_AND  InternalBitwiseOperator = "AND"
+	INTERNAL_OPERATOR_OR  InternalBitwiseOperator = "OR"
+	INTERNAL_OPERATOR_AND InternalBitwiseOperator = "AND"
 )
 
 const (
-	INTERNAL_WHERE_ID BuildStep = iota
+	SELECT QueryType = iota
+	UPDATE
+	DELETE
+	INSERT
+
+	CREATE
+	DROP
+
+	ALL
+)
+
+const (
+	INTERNAL_WHERE_ID QueryStep = iota
 	INTERNAL_COMPOSED_WHERE_ID
 	INTERNAL_SET_ID
 	INTERNAL_ORDER_ID
 	INTERNAL_JOIN_ID
+	INTERNAL_GROUP_BY_ID
 )
-
-const FIELD_PARSER_PLACEHOLDER = "$$$"
 
 func newConditionalQuery(parent *Query, block string, error error) *ConditionalQuery {
 	return &ConditionalQuery{
@@ -162,10 +172,10 @@ func (q *Query) Set(field string, value any) *Query {
 	}
 	q.requestedFields = append(q.requestedFields, field)
 
-	if q.containsBuildStep(INTERNAL_SET_ID) {
+	if q.GetQueryStep(INTERNAL_SET_ID) {
 		q.appendQueryBlock(",")
 	} else {
-		q.setCurrentBuildStep(INTERNAL_SET_ID)
+		q.SetQueryStep(INTERNAL_SET_ID)
 		q.appendQueryBlock("SET")
 	}
 
@@ -173,7 +183,8 @@ func (q *Query) Set(field string, value any) *Query {
 	return q
 }
 func (q *Query) Where(conditional *ConditionalQuery) *Query {
-	return q.where(INTERNAL_OPERATOR_NONE, conditional).parentQuery
+	q.where("", conditional)
+	return q
 }
 func (q *Query) And(conditionals ...*ConditionalQuery) *ConditionalQuery {
 	return q.where(INTERNAL_OPERATOR_AND, conditionals...)
@@ -181,7 +192,7 @@ func (q *Query) And(conditionals ...*ConditionalQuery) *ConditionalQuery {
 func (q *Query) Or(conditionals ...*ConditionalQuery) *ConditionalQuery {
 	return q.where(INTERNAL_OPERATOR_OR, conditionals...)
 }
-func (p *ConditionalQuery) IsIn(fieldValues ...any) *ConditionalQuery {
+func (p *ConditionalQuery) IsAny(fieldValues ...any) *ConditionalQuery {
 	if p.error != nil {
 		return p
 	}
@@ -268,10 +279,10 @@ func (q *Query) OrderAscending(fieldName string) *Query {
 	}
 
 	q.registerForValidation(fieldName)
-	if q.containsBuildStep(INTERNAL_ORDER_ID) {
+	if q.GetQueryStep(INTERNAL_ORDER_ID) {
 		q.appendQueryBlock(fmt.Sprintf(", %s ASC", fieldName))
 	} else {
-		q.setCurrentBuildStep(INTERNAL_ORDER_ID)
+		q.SetQueryStep(INTERNAL_ORDER_ID)
 		q.appendQueryBlock(fmt.Sprintf("ORDER BY %s ASC", fieldName))
 	}
 
@@ -283,18 +294,18 @@ func (q *Query) OrderDescending(fieldName string) *Query {
 	}
 
 	q.registerForValidation(fieldName)
-	if q.containsBuildStep(INTERNAL_ORDER_ID) {
+	if q.GetQueryStep(INTERNAL_ORDER_ID) {
 		q.appendQueryBlock(fmt.Sprintf(", %s DESC", fieldName))
 	} else {
-		q.setCurrentBuildStep(INTERNAL_ORDER_ID)
+		q.SetQueryStep(INTERNAL_ORDER_ID)
 		q.appendQueryBlock(fmt.Sprintf("ORDER BY %s DESC", fieldName))
 	}
 
 	return q
 }
-func (q *Query) As(alias string) *Query {
+func (q *AdditionalSelectQuery) As(alias string) *Query {
 	if q.Error != nil {
-		return q
+		return q.Query
 	}
 
 	// Insert the alias in all anonymous fields
@@ -309,7 +320,7 @@ func (q *Query) As(alias string) *Query {
 	delete(q.tableAliases, "")
 
 	q.appendQueryBlock(fmt.Sprintf("AS %s", alias))
-	return q
+	return q.Query
 }
 func (q *Query) RightJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery {
 	return q.join(r, "RIGHT JOIN", alias)
@@ -328,23 +339,19 @@ func (q *Query) InnerJoin(r *TableRegistry, alias string) *PartialInnerJoinQuery
 }
 func (q *Query) join(r *TableRegistry, joinType, alias string) *PartialInnerJoinQuery {
 	if q.Error != nil {
-		return &PartialInnerJoinQuery{
-			innerQuery: q,
-		}
+		return newPartialInnerJoinQuery(q)
 	}
-	q.setCurrentBuildStep(INTERNAL_JOIN_ID)
+	q.SetQueryStep(INTERNAL_JOIN_ID)
 	q.tableAliases[alias] = r
 	q.appendQueryBlock(fmt.Sprintf("%s %s AS %s", joinType, r.TableName, alias))
-	return &PartialInnerJoinQuery{
-		innerQuery: q,
-	}
+	return newPartialInnerJoinQuery(q)
 }
 func (q *PartialInnerJoinQuery) On(fieldA, fieldB string) *Query {
-	if q.innerQuery.Error != nil {
-		return q.innerQuery
+	if q.parentQuery.Error != nil {
+		return q.parentQuery
 	}
-	q.innerQuery.appendQueryBlock(fmt.Sprintf("ON %s = %s", fieldA, fieldB))
-	return q.innerQuery
+	q.parentQuery.appendQueryBlock(fmt.Sprintf("ON %s = %s", fieldA, fieldB))
+	return q.parentQuery
 }
 func (q *Query) Returning(fields ...string) *Query {
 	if q.Error != nil {
@@ -370,7 +377,7 @@ func (q *Query) Field(fieldName string) *ConditionalQuery {
 	}
 
 	q.registerForValidation(fieldName)
-	q.setCurrentBuildStep(INTERNAL_WHERE_ID)
+	q.SetQueryStep(INTERNAL_WHERE_ID)
 	return newConditionalQuery(q, fieldName+" ", q.Error)
 }
 func (q *Query) Offset(amount int) *Query {
@@ -414,24 +421,38 @@ func (q *Query) where(operator InternalBitwiseOperator, conditionals ...*Conditi
 	}
 
 	switch operator {
-	case INTERNAL_OPERATOR_NONE:
-		q.appendQueryBlock("WHERE " + conditionals[0].block)
-		return newConditionalQuery(q, "", nil)
-	case INTERNAL_OPERATOR_OR:
-		blocks := make([]string, len(conditionals))
-		for i, conditional := range conditionals {
-			blocks[i] = conditional.block
-		}
-		return newConditionalQuery(q, strings.Join(blocks, " OR "), nil)
-	case INTERNAL_OPERATOR_AND:
-		blocks := make([]string, len(conditionals))
-		for i, conditional := range conditionals {
-			blocks[i] = conditional.block
-		}
-		return newConditionalQuery(q, strings.Join(blocks, " AND "), nil)
 	default:
-		return newConditionalQuery(q, "", ErrorDescription(ErrUnexpected, "How????"))
+		return handleWhereClause(q, &conditionals)
+	case INTERNAL_OPERATOR_OR:
+		return handleOrCondition(q, &conditionals)
+	case INTERNAL_OPERATOR_AND:
+		return handleAndCondition(q, &conditionals)
 	}
+}
+func handleWhereClause(query *Query, conditionals *[]*ConditionalQuery) *ConditionalQuery {
+	for _, conditional := range *conditionals {
+		query.appendQueryBlock("WHERE " + conditional.block)
+	}
+	return nil
+}
+func handleAndCondition(query *Query, conditionals *[]*ConditionalQuery) *ConditionalQuery {
+	blocks := make([]string, len(*conditionals))
+	for i, conditional := range *conditionals {
+		blocks[i] = conditional.block
+	}
+	return newConditionalQuery(query, strings.Join(blocks, " OR "), nil)
+}
+func handleOrCondition(query *Query, conditionals *[]*ConditionalQuery) *ConditionalQuery {
+	blocks := make([]string, len(*conditionals))
+	for i, conditional := range *conditionals {
+		blocks[i] = conditional.block
+	}
+	return newConditionalQuery(query, strings.Join(blocks, " AND "), nil)
+}
+func (q *Query) GroupBy(fields ...string) *Query {
+	q.SetQueryStep(INTERNAL_GROUP_BY_ID)
+	q.appendQueryBlock("GROUP BY " + strings.Join(fields, " "))
+	return q
 }
 
 //	func (q *Query) getCurrentQueryBlockIndex() int {
@@ -486,19 +507,19 @@ func (q *Query) build() string {
 	return strings.Join(blocks, " ")
 }
 
-//	func (q *QueryValidator) getBuildStepAmount(step BuildStep) int {
-//		return q.RegisteredBuildSteps[step]
+//	func (q *QueryValidator) QueryStepAmount(step QueryStep) int {
+//		return q.SetQuerySteps[step]
 //	}
-func (q *QueryValidator) containsBuildStep(step BuildStep) bool {
-	_, found := q.RegisteredBuildSteps[step]
+func (q *QueryValidator) GetQueryStep(step QueryStep) bool {
+	_, found := q.QuerySteps[step]
 	return found
 }
-func (q *QueryValidator) setCurrentBuildStep(step BuildStep) {
-	q.RegisteredBuildSteps[step] += 1
-	q.CurrentBuildStep = step
+func (q *QueryValidator) SetQueryStep(step QueryStep) {
+	q.QuerySteps[step] += 1
+	q.QueryStep = step
 }
-func (q *QueryValidator) getLastBlockType() BuildStep {
-	return q.CurrentBuildStep
+func (q *QueryValidator) getLastBlockType() QueryStep {
+	return q.QueryStep
 }
 func (q *QueryValidator) isValid() error {
 	for _, fieldName := range q.requestedFields {
@@ -530,13 +551,24 @@ func (q *QueryValidator) registerForValidation(fieldNames ...string) {
 }
 func newQueryValidator(t *TableRegistry) *QueryValidator {
 	return &QueryValidator{
-		RegisteredBuildSteps: make(map[BuildStep]int),
-		CurrentBuildStep:     -1,
+		QuerySteps: make(map[QueryStep]int),
+		QueryStep:  -1,
 
 		requestedFields: make([]string, 0),
 		tableAliases:    make(map[string]*TableRegistry),
 
 		TableRegistry: t,
+	}
+}
+
+func newAdditionalSelectQuery(query *Query) *AdditionalSelectQuery {
+	return &AdditionalSelectQuery{
+		Query: query,
+	}
+}
+func newPartialInnerJoinQuery(query *Query) *PartialInnerJoinQuery {
+	return &PartialInnerJoinQuery{
+		parentQuery: query,
 	}
 }
 

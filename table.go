@@ -7,18 +7,6 @@ import (
 	"strings"
 )
 
-const (
-	SELECT QueryType = iota
-	UPDATE
-	DELETE
-	INSERT
-
-	CREATE
-	DROP
-
-	ALL
-)
-
 type TableName string
 type TableRegistry struct {
 	TableName TableName
@@ -99,10 +87,25 @@ func (m *TableRegistry) Update() *Query {
 
 	return q
 }
-func (m *TableRegistry) Select(fieldsName ...string) *Query {
+func (m *TableRegistry) SelectDistinct(fieldsName ...string) *AdditionalSelectQuery {
 	q := NewQuery(m, SELECT)
 	if q.Error != nil {
-		return q
+		return newAdditionalSelectQuery(q)
+	}
+
+	// Maps the register of this table as anonymous alias until it gets an alias
+	q.tableAliases[""] = m
+	q.requestedFields = append(q.requestedFields, fieldsName...)
+
+	q.Type = SELECT
+	q.appendQueryBlock(fmt.Sprintf("SELECT DISTINCT %s", strings.Join(fieldsName, ", ")))
+	q.appendQueryBlock(fmt.Sprintf("FROM %s", q.TableRegistry.TableName))
+	return newAdditionalSelectQuery(q)
+}
+func (m *TableRegistry) Select(fieldsName ...string) *AdditionalSelectQuery {
+	q := NewQuery(m, SELECT)
+	if q.Error != nil {
+		return newAdditionalSelectQuery(q)
 	}
 
 	// Maps the register of this table as anonymous alias until it gets an alias
@@ -112,9 +115,8 @@ func (m *TableRegistry) Select(fieldsName ...string) *Query {
 	q.Type = SELECT
 	q.appendQueryBlock(fmt.Sprintf("SELECT %s", strings.Join(fieldsName, ", ")))
 	q.appendQueryBlock(fmt.Sprintf("FROM %s", q.TableRegistry.TableName))
-	return q
+	return newAdditionalSelectQuery(q)
 }
-
 func (m *TableRegistry) Insert(fieldsName ...string) *Query {
 	q := NewQuery(m, INSERT)
 	if q.Error != nil {
