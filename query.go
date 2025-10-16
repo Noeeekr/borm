@@ -440,14 +440,14 @@ func handleAndCondition(query *Query, conditionals *[]*ConditionalQuery) *Condit
 	for i, conditional := range *conditionals {
 		blocks[i] = conditional.block
 	}
-	return newConditionalQuery(query, strings.Join(blocks, " OR "), nil)
+	return newConditionalQuery(query, strings.Join(blocks, " AND "), nil)
 }
 func handleOrCondition(query *Query, conditionals *[]*ConditionalQuery) *ConditionalQuery {
 	blocks := make([]string, len(*conditionals))
 	for i, conditional := range *conditionals {
 		blocks[i] = conditional.block
 	}
-	return newConditionalQuery(query, strings.Join(blocks, " AND "), nil)
+	return newConditionalQuery(query, strings.Join(blocks, " OR "), nil)
 }
 func (q *Query) GroupBy(fields ...string) *Query {
 	q.SetQueryStep(INTERNAL_GROUP_BY_ID)
