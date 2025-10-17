@@ -73,7 +73,7 @@ func main() {
 	}
 
 	// Registers default postgres database to migrate stuff through it
-	commiter, err := borm.Connect(borm.RegisterDatabase("postgres", "db", borm.RegisterUser("postgres", "noeeekr")))
+	commiter, err := borm.Connect(borm.RegisterDatabase("postgres", "db", borm.RegisterUser("borm_user", "borm_password")))
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -381,6 +381,13 @@ func main() {
 		),
 	)
 
+	if err := development.Do(query); err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+
+	query = TABLE_USERS.Select("u.name").As("u")
+	query.Where(query.And(query.And(nil, nil), query.And(query.Field("u.name").IsLike("%%", false), nil)))
 	if err := development.Do(query); err != nil {
 		fmt.Println(err.Error())
 		return
