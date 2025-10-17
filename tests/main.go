@@ -387,7 +387,7 @@ func main() {
 	}
 
 	query = TABLE_USERS.Select("u.name").As("u")
-	query.Where(query.And(query.And(nil, nil), query.And(query.Field("u.name").IsLike("%%", false), nil)))
+	query.Where(query.And(query.Compose(query.And(nil, nil)), query.And(query.Field("u.name").IsLike("%%", false), nil)))
 	if err := development.Do(query); err != nil {
 		fmt.Println(err.Error())
 		return

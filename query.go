@@ -271,6 +271,10 @@ func (p *ConditionalQuery) IsLike(regex string, caseSensitive bool) *Conditional
 }
 
 func (q *Query) Compose(conditional *ConditionalQuery) *ConditionalQuery {
+	if conditional == nil {
+		return nil
+	}
+	q.SetQueryStep(INTERNAL_COMPOSED_WHERE_ID)
 	return newConditionalQuery(q, fmt.Sprintf("(%s)", conditional.block), nil)
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
@@ -467,7 +471,19 @@ func (q *Query) GroupBy(fields ...string) *Query {
 
 /*
 
- */
+
+	Where(
+		query.And(
+			query.If(fieldName != nil, Field("fieldA").Equals(*fieldName))
+			query.If(fieldValue != nil, Field("fieldB").IsAny(*fieldValue))
+			query.If(fieldValue != nil, Field("fieldC").Like(""))
+		)
+	)
+
+	if nil next
+	if size: add + join
+	else:  add
+*/
 
 //	func (q *Query) getCurrentQueryBlockIndex() int {
 //		return len(q.Blocks) - 1
