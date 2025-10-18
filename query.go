@@ -2,6 +2,7 @@ package borm
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -120,8 +121,8 @@ func (q *Query) ThrowErrorOnFound() *Query {
 	q.throwErrorOnFound = true
 	return q
 }
-func (q *Query) SetError(e error) *Query {
-	q.Error = e
+func (q *Query) SetError(e string) *Query {
+	q.Error = errors.New(e)
 	return q
 }
 func (q *Query) Values(values ...any) *Query {
@@ -183,14 +184,40 @@ func (q *Query) Set(field string, value any) *Query {
 	return q
 }
 func (q *Query) Where(conditional *ConditionalQuery) *Query {
-	q.where("", &[]*ConditionalQuery{conditional})
+	if q.Error != nil {
+		return q
+	}
+	if q.Type == INSERT {
+		return q.SetError("Must be SELECT | UPDATE | DELETE")
+	}
+	if conditional != nil {
+		q.appendQueryBlock("WHERE " + conditional.block)
+	}
 	return q
 }
 func (q *Query) And(conditionals ...*ConditionalQuery) *ConditionalQuery {
-	return q.where(INTERNAL_OPERATOR_AND, &conditionals)
+	cleanConditionals := []string{}
+	for _, conditional := range conditionals {
+		if conditional != nil {
+			cleanConditionals = append(cleanConditionals, conditional.block)
+		}
+	}
+	if len(cleanConditionals) == 0 {
+		return nil
+	}
+	return newConditionalQuery(q, strings.Join(cleanConditionals, " AND "), nil)
 }
 func (q *Query) Or(conditionals ...*ConditionalQuery) *ConditionalQuery {
-	return q.where(INTERNAL_OPERATOR_OR, &conditionals)
+	cleanConditionals := []string{}
+	for _, conditional := range conditionals {
+		if conditional != nil {
+			cleanConditionals = append(cleanConditionals, conditional.block)
+		}
+	}
+	if len(cleanConditionals) == 0 {
+		return nil
+	}
+	return newConditionalQuery(q, strings.Join(cleanConditionals, " OR "), nil)
 }
 func (p *ConditionalQuery) IsAny(fieldValues ...any) *ConditionalQuery {
 	if p.error != nil {
@@ -409,81 +436,11 @@ func (q *Query) Limit(amount int) *Query {
 	return q
 }
 
-// On first use where appends the WHERE clause, after that it can be selectively used to append the operator and fields
-// First parameter specifies the operator to be used to append with the previous where rule if exists.
-// Second parameter is the fieldName that the rule will validate into.
-// Third parameter tells if the query should merge to the previous one or creating new block, if true the operator will be used for that reason.
-func (q *Query) where(operator InternalBitwiseOperator, conditionals *[]*ConditionalQuery) *ConditionalQuery {
-	if q.Error != nil {
-		return newConditionalQuery(q, "", q.Error)
-	}
-	if q.Type == INSERT {
-		return newConditionalQuery(q, "", ErrorDescription(ErrInvalidMethodChain, "Must be SELECT | UPDATE | DELETE"))
-	}
-	if len(*conditionals) == 0 {
-		return newConditionalQuery(q, "", ErrorDescription(ErrSyntax, "Conditionals shouldn't be used with empty values"))
-	}
-
-	switch operator {
-	default:
-		return handleWhereClause(q, conditionals)
-	case INTERNAL_OPERATOR_OR:
-		return handleOrCondition(q, conditionals)
-	case INTERNAL_OPERATOR_AND:
-		return handleAndCondition(q, conditionals)
-	}
-}
-func handleWhereClause(query *Query, conditionals *[]*ConditionalQuery) *ConditionalQuery {
-	for _, conditional := range *conditionals {
-		query.appendQueryBlock("WHERE " + conditional.block)
-	}
-	return nil
-}
-func handleAndCondition(query *Query, conditionals *[]*ConditionalQuery) *ConditionalQuery {
-	cleanConditionals := []string{}
-	for _, conditional := range *conditionals {
-		if conditional != nil {
-			cleanConditionals = append(cleanConditionals, conditional.block)
-		}
-	}
-	if len(cleanConditionals) == 0 {
-		return nil
-	}
-	return newConditionalQuery(query, strings.Join(cleanConditionals, " AND "), nil)
-}
-func handleOrCondition(query *Query, conditionals *[]*ConditionalQuery) *ConditionalQuery {
-	cleanConditionals := []string{}
-	for _, conditional := range *conditionals {
-		if conditional != nil {
-			cleanConditionals = append(cleanConditionals, conditional.block)
-		}
-	}
-	if len(cleanConditionals) == 0 {
-		return nil
-	}
-	return newConditionalQuery(query, strings.Join(cleanConditionals, " OR "), nil)
-}
 func (q *Query) GroupBy(fields ...string) *Query {
 	q.SetQueryStep(INTERNAL_GROUP_BY_ID)
 	q.appendQueryBlock("GROUP BY " + strings.Join(fields, " "))
 	return q
 }
-
-/*
-
-
-	Where(
-		query.And(
-			query.If(fieldName != nil, Field("fieldA").Equals(*fieldName))
-			query.If(fieldValue != nil, Field("fieldB").IsAny(*fieldValue))
-			query.If(fieldValue != nil, Field("fieldC").Like(""))
-		)
-	)
-
-	if nil next
-	if size: add + join
-	else:  add
-*/
 
 //	func (q *Query) getCurrentQueryBlockIndex() int {
 //		return len(q.Blocks) - 1
@@ -620,7 +577,7 @@ func NewQuery(t *TableRegistry, typ QueryType) *Query {
 
 	table := (*t.databaseCache)[t.TableName]
 	if table.Error != nil {
-		return q.SetError(table.Error)
+		return q.SetError(table.Error.Error())
 	}
 
 	q.placeholderIndex = 1
