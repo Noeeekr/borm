@@ -22,6 +22,11 @@ func (r *Commiter) MigrateRelations() error {
 		return ErrorDescription(ErrFailedTransaction, "", err.Error())
 	}
 
+	for query := range r.GetMigrationQueries() {
+		if err := t.Do(query); err != nil {
+			return ErrorDescription(ErrFailedTransaction, "", err.Error())
+		}
+	}
 	return t.Commit()
 }
 func (r *Commiter) DropRelations() error {
