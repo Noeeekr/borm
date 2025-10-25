@@ -12,6 +12,7 @@ func (m *MigrationPopulator) RegisterMigrationQueries(queries ...*Query) {
 func (m *MigrationPopulator) GetMigrationQueries() <-chan *Query {
 	queryIterator := make(chan *Query)
 	go func() {
+		defer close(queryIterator)
 		for _, query := range m.queries {
 			queryIterator <- query
 		}
