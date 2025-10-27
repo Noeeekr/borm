@@ -6,61 +6,10 @@ import (
 	"os"
 	"time"
 
+	_ "github.com/lib/pq"
+
 	"github.com/Noeeekr/borm"
 )
-
-type UserRole string
-
-const (
-	STUDENT UserRole = "STUDENT"
-	TEACHER UserRole = "TEACHER"
-	ADMIN   UserRole = "ADMIN"
-)
-
-type Id struct {
-	Id int `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
-}
-type Users struct {
-	*Id
-
-	Name     string    `borm:"(CONSTRAINTS, NOT NULL)"`
-	Email    string    `borm:"(CONSTRAINTS, NOT NULL, UNIQUE)"`
-	Password string    `borm:"(CONSTRAINTS, NOT NULL)"`
-	Role     *UserRole `borm:"(TYPE, user_role)"`
-
-	SpecificWordA string `borm:"(NAME, specific_a)"`
-	SpecificWordB string `borm:"(NAME, specific_b)"`
-	SpecificWordC string `borm:"(NAME, specific_c)"`
-	// borm:"TYPE<serial> NAME<issuer_id> CONSTRAINTS<ignore, not null, unique, default 'abcd'> "
-	// borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"
-	// borm:"type is serial, constraints are primary key and not null and default 'abcd', name is issuer_id"
-	// borm:"type:serial, constraints:primary key, not null, default 'abcd', name:issuer_id"
-	// borm:"type(serial) constraints(primary key, not null, default 'abcd') name(issuer_id)"
-
-	DeletedAt time.Time `borm:"(NAME, deleted_at)"`
-	UpdatedAt time.Time `borm:"(NAME, updated_at)"`
-	CreatedAt time.Time `borm:"(NAME, created_at)"`
-}
-type Notifications struct {
-	Id          int    `borm:"(TYPE, SERIAL) (CONSTRAINTS, PRIMARY KEY)"`
-	IssuerId    int    `borm:"(NAME, issuer_id) (FOREIGN KEY, USERS, ID)"`
-	Title       string `borm:"(CONSTRAINTS, DEFAULT 'empty title')"`
-	Description string
-
-	ThisFieldShouldNotExist int `borm:"(IGNORE)"`
-}
-type UsersNotifications struct {
-	UserId         int `borm:"(NAME, user_id) (FOREIGN KEY, USERS, ID)"`
-	NotificationId int `borm:"(NAME, notification_id) (FOREIGN KEY, NOTIFICATIONS, ID)"`
-}
-type FilterClassOptions struct {
-	A string
-	B string
-	C string
-	D string
-	E UserRole
-	F *time.Time
-}
 
 func main() {
 	for _, arg := range os.Args {
@@ -73,7 +22,9 @@ func main() {
 	}
 
 	// Registers default postgres database to migrate stuff through it
-	commiter, err := borm.Connect(borm.RegisterDatabase("postgres", "db", borm.RegisterUser("borm_user", "borm_password")))
+	database := borm.RegisterDatabase("postgres", "db", borm.RegisterUser("borm_user", "borm_password"))
+
+	commiter, err := borm.Connect(database)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -95,10 +46,14 @@ func main() {
 	defer development.DB().Close()
 
 	// Create new database relations
+	_ = development.RegisterEnum("int_enum", 1, 2, 3)
+	_ = development.RegisterEnum("float_enum", 1.1, 2.2, 3.3)
+	_ = development.RegisterEnum("complex_enum", complex128(10), complex128(20), complex128(30))
 	USER_ROLES := development.RegisterEnum("user_role", STUDENT, TEACHER, ADMIN)
 	TABLE_USERS := development.RegisterTable(Users{}).NeedRoles(USER_ROLES)
 	TABLE_NOTIFICATIONS := development.RegisterTable(Notifications{}).NeedTables(TABLE_USERS)
 	TABLE_USERS_NOTIFICATIONS := development.RegisterTable(UsersNotifications{}).Name("users_notifications").NeedTables(TABLE_USERS, TABLE_NOTIFICATIONS)
+
 	// DEVELOPMENT_USER.GrantPrivileges(TABLE_USERS, borm.ALL)
 
 	err = development.MigrateRelations()

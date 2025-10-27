@@ -2,6 +2,7 @@ package borm
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/Noeeekr/borm/configuration"
@@ -184,13 +185,16 @@ func parseCreateTableQuery(table *TableRegistry) *Query {
 	return query
 }
 func parseCreateEnumQuery(enum *Enum) *Query {
-	values := enum.GetValues()
-	for i, value := range values {
-		values[i] = fmt.Sprintf("'%s'", value)
+	values := []string{}
+	for _, value := range enum.GetValues() {
+		if enum.kind == reflect.String {
+			values = append(values, fmt.Sprintf("'%s'", value))
+		} else {
+			values = append(values, fmt.Sprintf("%d", value))
+		}
 	}
 
 	queryStr := fmt.Sprintf("CREATE TYPE %s AS ENUM (%s);", strings.ToLower(string(enum.Name)), strings.Join(values, ", "))
 	query := newUnsafeQuery(CREATE, queryStr)
-
 	return query
 }
