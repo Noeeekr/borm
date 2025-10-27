@@ -1,5 +1,7 @@
 package borm
 
+import "reflect"
+
 type TypName string
 type TypType string
 type TypMethods interface {
@@ -19,8 +21,9 @@ type Enum struct {
 	EnumMethods
 	*Typ
 
+	kind           reflect.Kind
 	registerErrors error
-	options        []string
+	options        []any
 }
 
 const (
@@ -33,6 +36,6 @@ func (t *Typ) GetName() TypName {
 func (t *Typ) GetType() TypType {
 	return t.Type
 }
-func (e *Enum) GetValues() []string {
+func (e *Enum) GetValues() []any {
 	return e.options
 }
