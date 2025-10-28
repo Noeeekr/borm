@@ -58,9 +58,6 @@ func (r *TypesCache) RegisterEnum(name string, values ...any) *Enum {
 
 		options = append(options, value)
 	}
-
-	fmt.Println(name, "REACHED")
-
 	typName := TypName(strings.ToLower(name))
 	enum := &Enum{Typ: &Typ{Name: typName, Type: ENUM}, options: options, kind: targetType.Kind()}
 	(*r)[typName] = enum
