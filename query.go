@@ -48,8 +48,8 @@ type QueryValidator struct {
 	// Pointer to the table this query is being built on
 	TableRegistry *TableRegistry
 
-	tableAliases    map[string]*TableRegistry
-	requestedFields []string
+	tableAliases   map[string]*TableRegistry
+	selectorFields []string
 
 	QuerySteps map[QueryStep]int
 	QueryStep  QueryStep
@@ -88,12 +88,13 @@ const (
 )
 
 const (
-	INTERNAL_WHERE_ID QueryStep = iota
-	INTERNAL_COMPOSED_WHERE_ID
-	INTERNAL_SET_ID
-	INTERNAL_ORDER_ID
-	INTERNAL_JOIN_ID
-	INTERNAL_GROUP_BY_ID
+	INTERNAL_COMPOSED_WHERE_TOKEN QueryStep = iota
+	INTERNAL_GROUP_BY_TOKEN
+	INTERNAL_ORDER_TOKEN
+	INTERNAL_WHERE_TOKEN
+	INTERNAL_JOIN_TOKEN
+	INTERNAL_SET_TOKEN
+	INTERNAL_AS_TOKEN
 )
 
 func newConditionalQuery(parent *Query, block string, error error) *ConditionalQuery {
@@ -171,12 +172,12 @@ func (q *Query) Set(field string, value any) *Query {
 		q.Error = ErrorDescription(ErrInvalidMethodChain, "Must be INSERT or UPDATE")
 		return q
 	}
-	q.requestedFields = append(q.requestedFields, field)
+	q.selectorFields = append(q.selectorFields, field)
 
-	if q.GetQueryStep(INTERNAL_SET_ID) {
+	if q.GetQueryStep(INTERNAL_SET_TOKEN) {
 		q.appendQueryBlock(",")
 	} else {
-		q.SetQueryStep(INTERNAL_SET_ID)
+		q.SetQueryStep(INTERNAL_SET_TOKEN)
 		q.appendQueryBlock("SET")
 	}
 
@@ -301,7 +302,7 @@ func (q *Query) Compose(conditional *ConditionalQuery) *ConditionalQuery {
 	if conditional == nil {
 		return nil
 	}
-	q.SetQueryStep(INTERNAL_COMPOSED_WHERE_ID)
+	q.SetQueryStep(INTERNAL_COMPOSED_WHERE_TOKEN)
 	return newConditionalQuery(q, fmt.Sprintf("(%s)", conditional.block), nil)
 }
 func (q *Query) OrderAscending(fieldName string) *Query {
@@ -310,10 +311,10 @@ func (q *Query) OrderAscending(fieldName string) *Query {
 	}
 
 	q.registerForValidation(fieldName)
-	if q.GetQueryStep(INTERNAL_ORDER_ID) {
+	if q.GetQueryStep(INTERNAL_ORDER_TOKEN) {
 		q.appendQueryBlock(fmt.Sprintf(", %s ASC", fieldName))
 	} else {
-		q.SetQueryStep(INTERNAL_ORDER_ID)
+		q.SetQueryStep(INTERNAL_ORDER_TOKEN)
 		q.appendQueryBlock(fmt.Sprintf("ORDER BY %s ASC", fieldName))
 	}
 
@@ -325,10 +326,10 @@ func (q *Query) OrderDescending(fieldName string) *Query {
 	}
 
 	q.registerForValidation(fieldName)
-	if q.GetQueryStep(INTERNAL_ORDER_ID) {
+	if q.GetQueryStep(INTERNAL_ORDER_TOKEN) {
 		q.appendQueryBlock(fmt.Sprintf(", %s DESC", fieldName))
 	} else {
-		q.SetQueryStep(INTERNAL_ORDER_ID)
+		q.SetQueryStep(INTERNAL_ORDER_TOKEN)
 		q.appendQueryBlock(fmt.Sprintf("ORDER BY %s DESC", fieldName))
 	}
 
@@ -339,17 +340,11 @@ func (q *AdditionalSelectQuery) As(alias string) *Query {
 		return q.Query
 	}
 
-	// Insert the alias in all anonymous fields
-	for i, field := range q.requestedFields {
-		if !strings.Contains(field, ".") {
-			q.requestedFields[i] = fmt.Sprintf("%s.%s", alias, field)
-		}
-	}
-
 	// Moves the TableRegistry to the alias
 	q.tableAliases[alias] = q.tableAliases[""]
 	delete(q.tableAliases, "")
 
+	q.SetQueryStep(INTERNAL_AS_TOKEN)
 	q.appendQueryBlock(fmt.Sprintf("AS %s", alias))
 	return q.Query
 }
@@ -372,7 +367,7 @@ func (q *Query) join(r *TableRegistry, joinType, alias string) *PartialInnerJoin
 	if q.Error != nil {
 		return newPartialInnerJoinQuery(q)
 	}
-	q.SetQueryStep(INTERNAL_JOIN_ID)
+	q.SetQueryStep(INTERNAL_JOIN_TOKEN)
 	q.tableAliases[alias] = r
 	q.appendQueryBlock(fmt.Sprintf("%s %s AS %s", joinType, r.TableName, alias))
 	return newPartialInnerJoinQuery(q)
@@ -393,7 +388,7 @@ func (q *Query) Returning(fields ...string) *Query {
 		return q
 	}
 
-	q.requestedFields = append(q.requestedFields, fields...)
+	q.selectorFields = append(q.selectorFields, fields...)
 	q.appendQueryBlock(fmt.Sprintf("RETURNING %s", strings.Join(fields, ", ")))
 	return q
 }
@@ -408,7 +403,7 @@ func (q *Query) Field(fieldName string) *ConditionalQuery {
 	}
 
 	q.registerForValidation(fieldName)
-	q.SetQueryStep(INTERNAL_WHERE_ID)
+	q.SetQueryStep(INTERNAL_WHERE_TOKEN)
 	return newConditionalQuery(q, fieldName+" ", q.Error)
 }
 func (q *Query) Offset(amount int) *Query {
@@ -437,7 +432,7 @@ func (q *Query) Limit(amount int) *Query {
 }
 
 func (q *Query) GroupBy(fields ...string) *Query {
-	q.SetQueryStep(INTERNAL_GROUP_BY_ID)
+	q.SetQueryStep(INTERNAL_GROUP_BY_TOKEN)
 	q.appendQueryBlock("GROUP BY " + strings.Join(fields, " "))
 	return q
 }
@@ -509,23 +504,37 @@ func (q *QueryValidator) getLastBlockType() QueryStep {
 	return q.QueryStep
 }
 func (q *QueryValidator) isValid() error {
-	for _, fieldName := range q.requestedFields {
-		var table *TableRegistry = q.TableRegistry
+	var err error
+	if !q.GetQueryStep(INTERNAL_AS_TOKEN) {
+		err = q.validateAllSelectStatmentUnaliasedFields()
+		if err != nil {
+			return err
+		}
+	} else {
+		err = q.validateAllSelectStatmentAliasedFields()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (q *QueryValidator) validateAllSelectStatmentUnaliasedFields() error {
+	for _, fieldStatement := range q.selectorFields {
+		fields := FindUnaliasedFields(fieldStatement)
+		err := q.validateTableFields("", fields...)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (q *QueryValidator) validateTableFields(tableAlias string, fields ...string) error {
+	table := q.tableAliases[tableAlias]
+	if table == nil {
+		return ErrorDescription(ErrSyntax, fmt.Sprintf("Failed to resolve field alias [%s]. ", tableAlias))
+	}
 
-		// alias, fieldname
-		alias, after, found := strings.Cut(fieldName, ".")
-		if found {
-			// For join conditions or operations with aliases
-			table = q.tableAliases[alias]
-			fieldName = after
-		} else {
-			// For operations without aliases
-			table = q.tableAliases[""]
-			fieldName = alias
-		}
-		if table == nil {
-			return ErrorDescription(ErrSyntax, fmt.Sprintf("Failed to resolve field [%s]. Perhaps a missing alias", fieldName))
-		}
+	for _, fieldName := range fields {
 		_, exists := table.Fields[TableFieldName(fieldName)]
 		if !exists {
 			return ErrorDescription(ErrSyntax, fmt.Sprintf("%s does not exist in %s", fieldName, table.TableName))
@@ -533,16 +542,141 @@ func (q *QueryValidator) isValid() error {
 	}
 	return nil
 }
+func (q *QueryValidator) validateAllSelectStatmentAliasedFields() error {
+	for _, fieldStatement := range q.selectorFields {
+		fields, found := RecoverSelectStatementAliasedFields(fieldStatement)
+		if !found {
+			return ErrorDescription(ErrSyntax, fmt.Sprintf("Found ambigous field in a select statement, perhaps a missing alias. Statement: %s", fieldStatement))
+		}
+		err := q.validateSelectStatementAliasedFields(fields, found)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (q *QueryValidator) validateSelectStatementAliasedFields(fields [][]string, found bool) error {
+	var alias string
+	var fieldName string
+
+	for _, field := range fields {
+		if found {
+			alias = field[0]
+			fieldName = field[1]
+		} else {
+			alias = ""
+			fieldName = field[0]
+		}
+
+		if err := q.validateTableFields(alias, fieldName); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Index refers to the index of the Alias-FieldName separator
+func trimLeftIndex(str string, index int) string {
+	for i := index; i >= 0; i-- {
+		switch str[i] {
+		case ':', ' ', '(':
+			return str[i+1 : index]
+		}
+	}
+	return str[:index]
+}
+
+// Index refers to the index of the Alias-FieldName separator
+func trimRightIndex(str string, index int) string {
+	for i := index; len(str) > i; i++ {
+		switch str[i] {
+		case ':', ' ', ')':
+			return str[index+1 : i]
+		}
+	}
+	return str[index+1:]
+}
+
+func RecoverSelectStatementAliasedField(str string, index int) (left, right string) {
+	return trimLeftIndex(str, index), trimRightIndex(str, index)
+}
+
+func RecoverSelectStatementAliasedFields(str string) ([][]string, bool) {
+	fields := [][]string{}
+	for i, r := range str {
+		if r == '.' {
+			left, right := RecoverSelectStatementAliasedField(str, i)
+			fields = append(fields, []string{left, right})
+		}
+	}
+	return fields, len(fields) > 0
+}
+
+// Returns the first trimmed unalised field and the rest of the string
+func BreakUnaliasedField(str string) (string, string) {
+	left := -1
+	right := -1
+	found := false
+outer:
+	for i, r := range str {
+		switch r {
+		case '(':
+			left = i
+			// Update found to false since a inner has been found
+			found = false
+		case ')', ':', '+', '-', '=', '>', '<':
+			// Does not mark the right end unless the word has been found
+			if found {
+				right = i
+				break outer
+			}
+		case ' ':
+			if found {
+				right = i
+				break outer
+			} else {
+				left = i
+			}
+		default:
+			// Does not mark the word as found unless the left side has been found
+			if left >= 0 {
+				found = true
+			}
+		}
+	}
+	if right == -1 && left == -1 {
+		return str, ""
+	}
+	if right == -1 || left == -1 {
+		return str, ""
+	}
+	return str[left+1 : right], str[right:]
+}
+func FindUnaliasedFields(str string) []string {
+	var fields []string
+	var field string
+	for {
+		field, str = BreakUnaliasedField(str)
+		if str == "" {
+			break
+		}
+		fields = append(fields, field)
+	}
+	return fields
+}
+
 func (q *QueryValidator) registerForValidation(fieldNames ...string) {
-	q.requestedFields = append(q.requestedFields, fieldNames...)
+	q.selectorFields = append(q.selectorFields, fieldNames...)
 }
 func newQueryValidator(t *TableRegistry) *QueryValidator {
 	return &QueryValidator{
 		QuerySteps: make(map[QueryStep]int),
 		QueryStep:  -1,
 
-		requestedFields: make([]string, 0),
-		tableAliases:    make(map[string]*TableRegistry),
+		selectorFields: make([]string, 0),
+		tableAliases:   make(map[string]*TableRegistry),
 
 		TableRegistry: t,
 	}

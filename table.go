@@ -44,6 +44,7 @@ func (m *TablesCache) RegisterTable(v any) *TableRegistry {
 		t.Error = ErrorDescription(ErrInvalidType, Type.Name(), "Must be of kind struct")
 		return &t
 	}
+
 	// Check if the struct is already cached and returns it if so
 	tableName := TableName(strings.ToLower(Type.Name()))
 	if TableRegistry, ok := (*m)[tableName]; ok {
@@ -95,7 +96,7 @@ func (m *TableRegistry) SelectDistinct(fieldsName ...string) *AdditionalSelectQu
 
 	// Maps the register of this table as anonymous alias until it gets an alias
 	q.tableAliases[""] = m
-	q.requestedFields = append(q.requestedFields, fieldsName...)
+	q.selectorFields = append(q.selectorFields, fieldsName...)
 
 	q.Type = SELECT
 	q.appendQueryBlock(fmt.Sprintf("SELECT DISTINCT %s", strings.Join(fieldsName, ", ")))
@@ -110,7 +111,7 @@ func (m *TableRegistry) Select(fieldsName ...string) *AdditionalSelectQuery {
 
 	// Maps the register of this table as anonymous alias until it gets an alias
 	q.tableAliases[""] = m
-	q.requestedFields = append(q.requestedFields, fieldsName...)
+	q.selectorFields = append(q.selectorFields, fieldsName...)
 
 	q.Type = SELECT
 	q.appendQueryBlock(fmt.Sprintf("SELECT %s", strings.Join(fieldsName, ", ")))
@@ -123,7 +124,7 @@ func (m *TableRegistry) Insert(fieldsName ...string) *Query {
 		return q
 	}
 	q.tableAliases[""] = m
-	q.requestedFields = append(q.requestedFields, fieldsName...)
+	q.selectorFields = append(q.selectorFields, fieldsName...)
 
 	q.Type = INSERT
 	q.requiredValueLength = len(fieldsName)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -336,6 +337,38 @@ func main() {
 		),
 	)
 
+	if err := development.Do(query); err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+
+	// Test new tag parser that works for cases like:
+	//		 SELECT COUNT(q.a) FROM quests AS q GROUP BY q.a
+	// Where in code we would have:
+	//		 Table.Select("COUNT(q.a)").As("q")
+	// Some tests may fail for syntax, others need to pass
+	amount := 0
+	query = TABLE_USERS.Select("COUNT(u.name)").As("u").GroupBy("u.name").Scanner(scanInt(&amount))
+	if err := development.Do(query); err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	query = TABLE_USERS.Select("COUNT()").As("u").GroupBy("u.name").Scanner(scanInt(&amount))
+	if err := development.Do(query); !errors.Is(err, borm.ErrSyntax) {
+		fmt.Println("Query errática passou nos testes.")
+		return
+	}
+	query = TABLE_USERS.Select("uu.name").As("u").GroupBy("u.name").Scanner(scanInt(&amount))
+	if err := development.Do(query); !errors.Is(err, borm.ErrSyntax) {
+		fmt.Println("Query errática passou nos testes.")
+		return
+	}
+	query = TABLE_USERS.Select("uu.name").As("u").GroupBy("u.name").Scanner(scanInt(&amount))
+	if err := development.Do(query); !errors.Is(err, borm.ErrSyntax) {
+		fmt.Println("Query errática passou nos testes.")
+		return
+	}
+	query = TABLE_USERS.Select("COUNT(name)").As("u").GroupBy("u.name").Scanner(scanInt(&amount))
 	if err := development.Do(query); err != nil {
 		fmt.Println(err.Error())
 		return
