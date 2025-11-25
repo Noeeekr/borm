@@ -433,7 +433,7 @@ func (q *Query) Limit(amount int) *Query {
 
 func (q *Query) GroupBy(fields ...string) *Query {
 	q.SetQueryStep(INTERNAL_GROUP_BY_TOKEN)
-	q.appendQueryBlock("GROUP BY " + strings.Join(fields, " "))
+	q.appendQueryBlock("GROUP BY " + strings.Join(fields, ", "))
 	return q
 }
 
